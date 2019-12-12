@@ -1,5 +1,5 @@
 #
-# Copyright 2014-2018, Intel Corporation
+# Copyright 2014-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -68,7 +68,6 @@ SRC=pmembench.cpp\
     scenario.cpp\
     log.cpp\
     blk.cpp\
-    vmem.cpp\
     pmem_memset.cpp\
     pmem_memcpy.cpp\
     pmem_flush.cpp\
@@ -80,12 +79,13 @@ SRC=pmembench.cpp\
     map_bench.cpp\
     pmemobj_tx.cpp\
     pmemobj_atomic_lists.cpp\
-    poolset_util.cpp
+    poolset_util.cpp\
+    benchmark_empty.cpp\
+    pmemobj_tx_add_range.cpp
 
 # Configuration file without the .cfg extension
 CONFIGS=pmembench_log\
 	pmembench_blk\
-	pmembench_vmem\
 	pmembench_memset\
 	pmembench_memcpy\
 	pmembench_flush\
@@ -110,8 +110,9 @@ LIBS += ../nondebug/libpmemcommon.a
 else
 LIBS += ../debug/libpmemcommon.a
 endif
-LIBS += -lpmemobj -lpmemlog -lpmemblk -lpmempool -lpmem -lvmem -pthread -lm \
-	$(LIBDL) $(LIBUUID) $(LIBNDCTL)
+CFLAGS += $(LIBNDCTL_CFLAGS)
+LIBS += -lpmemobj -lpmemlog -lpmemblk -lpmempool -lpmem -pthread -lm \
+	$(LIBDL) $(LIBUUID) $(LIBNDCTL_LIBS)
 ifeq ($(LIBRT_NEEDED), y)
 LIBS += -lrt
 endif
@@ -148,7 +149,7 @@ LDFLAGS += -fsanitize=$(SANITIZE)
 endif
 
 ifeq ($(BUILD_RPMEM),y)
-SRC += rpmem_persist.cpp
+SRC += rpmem.cpp
 LIBS += -lrpmem $(shell pkg-config --libs libfabric)
 CONFIGS += pmembench_rpmem
 CXXFLAGS += -DRPMEM_AVAILABLE

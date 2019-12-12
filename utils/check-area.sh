@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright 2018, Intel Corporation
+# Copyright 2018-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -42,7 +42,7 @@ fi
 
 files=`git show $1 | grep -e "^--- a/" -e "^+++ b/" | grep -v /dev/null | sed "s/^--- a\///" | sed "s/^+++ b\///" | uniq`
 
-git show -q $1
+git show -q $1 | cat
 
 echo
 echo "Modified files:"
@@ -63,14 +63,12 @@ echo
 echo "Areas computed basing on the list of modified files: (see utils/check-area.sh for full algorithm)"
 
 categorize pmem      -e "^src/libpmem/"     -e "^src/include/libpmem.h"
+categorize pmem2     -e "^src/libpmem2/"    -e "^src/include/libpmem2.h"
 categorize rpmem     -e "^src/librpmem/"    -e "^src/include/librpmem.h" -e "^src/tools/rpmemd/" -e "^src/rpmem_common/"
 categorize log       -e "^src/libpmemlog/"  -e "^src/include/libpmemlog.h"
 categorize blk       -e "^src/libpmemblk/"  -e "^src/include/libpmemblk.h"
 categorize obj       -e "^src/libpmemobj/"  -e "^src/include/libpmemobj.h" -e "^src/include/libpmemobj/"
 categorize pool      -e "^src/libpmempool/" -e "^src/include/libpmempool.h" -e "^src/tools/pmempool/"
-categorize vmem      -e "^src/libvmem/"     -e "^src/include/libvmem.h"
-categorize vmmalloc  -e "^src/libvmmalloc/" -e "^src/include/libvmmalloc.h"
-categorize jemalloc  -e "^src/jemalloc/"    -e "^src/windows/jemalloc_gen/"
 categorize benchmark -e "^src/benchmarks/"
 categorize examples  -e "^src/examples/"
 categorize daxio     -e "^src/tools/daxio/"

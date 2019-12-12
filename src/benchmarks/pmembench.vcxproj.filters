@@ -52,6 +52,12 @@
     <ClCompile Include="..\libpmemobj\ctl_debug.c">
       <Filter>pmemobj</Filter>
     </ClCompile>
+    <ClCompile Include="..\libpmemobj\critnib.c">
+      <Filter>pmemobj</Filter>
+    </ClCompile>
+    <ClCompile Include="..\libpmemobj\ctl_fallocate.c">
+      <Filter>pmemobj</Filter>
+    </ClCompile>
     <ClCompile Include="..\libpmemobj\cuckoo.c">
       <Filter>pmemobj</Filter>
     </ClCompile>
@@ -83,9 +89,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="scenario.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="vmem.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="benchmark_time.cpp">

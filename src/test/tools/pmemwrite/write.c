@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -57,7 +57,6 @@ struct pmemwrite
 	int nargs;	/* number of arguments */
 	char **args;	/* list of arguments */
 };
-
 
 static struct pmemwrite pmemwrite = {
 	.fname = NULL,
@@ -201,6 +200,7 @@ int
 main(int argc, char *argv[])
 {
 #ifdef _WIN32
+	util_suppress_errmsg();
 	wchar_t **wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
 	for (int i = 0; i < argc; i++) {
 		argv[i] = util_toUTF8(wargv[i]);

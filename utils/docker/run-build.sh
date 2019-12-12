@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright 2016-2018, Intel Corporation
+# Copyright 2016-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -42,10 +42,18 @@ set -e
 
 # Build all and run tests
 cd $WORKDIR
-make check-license
-make cstyle
-make -j2 USE_LIBUNWIND=1
-make -j2 test USE_LIBUNWIND=1
+make -j$(nproc) check-license
+make -j$(nproc) cstyle
+make -j$(nproc)
+make -j$(nproc) test
+# do not change -j2 to -j$(nproc) in case of tests (make check/pycheck)
 make -j2 pcheck TEST_BUILD=$TEST_BUILD
-make DESTDIR=/tmp source
+# do not change -j2 to -j$(nproc) in case of tests (make check/pycheck)
+make -j2 pycheck
+make -j$(nproc) DESTDIR=/tmp source
 
+# Create PR with generated docs
+if [[ "$AUTO_DOC_UPDATE" == "1" ]]; then
+	echo "Running auto doc update"
+	./utils/docker/run-doc-update.sh
+fi

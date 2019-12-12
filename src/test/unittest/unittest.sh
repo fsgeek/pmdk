@@ -1,5 +1,5 @@
 #
-# Copyright 2014-2018, Intel Corporation
+# Copyright 2014-2019, Intel Corporation
 # Copyright (c) 2016, Microsoft Corporation. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -36,7 +36,50 @@ set -e
 export LC_ALL="C"
 #export LC_ALL="en_US.UTF-8"
 
+if ! [ -f ../envconfig.sh ]; then
+	echo >&2 "envconfig.sh is missing -- is the tree built?"
+	exit 1
+fi
+
 . ../testconfig.sh
+. ../envconfig.sh
+
+if [ -t 1 ]; then
+	IS_TERMINAL_STDOUT=YES
+fi
+if [ -t 2 ]; then
+	IS_TERMINAL_STDERR=YES
+fi
+
+function is_terminal() {
+	local fd
+	fd=$1
+	case $(eval "echo \${IS_TERMINAL_${fd}}") in
+	YES) : ;;
+	*) false ;;
+	esac
+}
+
+function interactive_color() {
+	local color fd
+	color=$1
+	fd=$2
+	shift 2
+
+	if is_terminal ${fd} && command -v tput >/dev/null; then
+		echo "$(tput setaf $color || :)$*$(tput sgr0 || :)"
+	else
+		echo "$*"
+	fi
+}
+
+function interactive_red() {
+	interactive_color 1 "$@"
+}
+
+function interactive_green() {
+	interactive_color 2 "$@"
+}
 
 function verbose_msg() {
 	if [ "$UNITTEST_LOG_LEVEL" -ge 2 ]; then
@@ -76,7 +119,6 @@ fi
 
 export UNITTEST_LOG_LEVEL GREP TEST FS BUILD CHECK_TYPE CHECK_POOL VERBOSE SUFFIX
 
-VMMALLOC=libvmmalloc.so.1
 TOOLS=../tools
 LIB_TOOLS="../../tools"
 # Paths to some useful tools
@@ -127,7 +169,9 @@ $DIR_SRC/test/tools/ctrld/ctrld \
 $DIR_SRC/test/tools/fip/fip"
 
 # Portability
-VALGRIND_SUPP="--suppressions=../ld.supp --suppressions=../memcheck-libunwind.supp"
+VALGRIND_SUPP="--suppressions=../ld.supp \
+	--suppressions=../memcheck-libunwind.supp \
+	--suppressions=../memcheck-ndctl.supp"
 if [ "$(uname -s)" = "FreeBSD" ]; then
 	DATE="gdate"
 	DD="gdd"
@@ -154,38 +198,30 @@ fi
 # array of lists of PID files to be cleaned in case of an error
 NODE_PID_FILES[0]=""
 
-#
-# The variable TEST_LD_LIBRARY_PATH is constructed so the test pulls in
-# the appropriate library from this source tree.  To override this behavior
-# (i.e. to force the test to use the libraries installed elsewhere on
-# the system), set TEST_LD_LIBRARY_PATH and this script will not override it.
-#
-# For example, in a test directory, run:
-#	TEST_LD_LIBRARY_PATH=/usr/lib ./TEST0
-#
-[ "$TEST_LD_LIBRARY_PATH" ] || {
-	case "$BUILD"
-	in
-	debug|static-debug)
-		if [ -z "$PMDK_LIB_PATH_DEBUG" ]; then
-			TEST_LD_LIBRARY_PATH=../../debug
-			REMOTE_LD_LIBRARY_PATH=../debug
-		else
-			TEST_LD_LIBRARY_PATH=$PMDK_LIB_PATH_DEBUG
-			REMOTE_LD_LIBRARY_PATH=$PMDK_LIB_PATH_DEBUG
-		fi
-		;;
-	nondebug|static-nondebug)
-		if [ -z "$PMDK_LIB_PATH_NONDEBUG" ]; then
-			TEST_LD_LIBRARY_PATH=../../nondebug
-			REMOTE_LD_LIBRARY_PATH=../nondebug
-		else
-			TEST_LD_LIBRARY_PATH=$PMDK_LIB_PATH_NONDEBUG
-			REMOTE_LD_LIBRARY_PATH=$PMDK_LIB_PATH_NONDEBUG
-		fi
-		;;
-	esac
-}
+case "$BUILD"
+in
+debug|static-debug)
+	if [ -z "$PMDK_LIB_PATH_DEBUG" ]; then
+		PMDK_LIB_PATH=../../debug
+		REMOTE_PMDK_LIB_PATH=../debug
+	else
+		PMDK_LIB_PATH=$PMDK_LIB_PATH_DEBUG
+		REMOTE_PMDK_LIB_PATH=$PMDK_LIB_PATH_DEBUG
+	fi
+	;;
+nondebug|static-nondebug)
+	if [ -z "$PMDK_LIB_PATH_NONDEBUG" ]; then
+		PMDK_LIB_PATH=../../nondebug
+		REMOTE_PMDK_LIB_PATH=../nondebug
+	else
+		PMDK_LIB_PATH=$PMDK_LIB_PATH_NONDEBUG
+		REMOTE_PMDK_LIB_PATH=$PMDK_LIB_PATH_NONDEBUG
+	fi
+	;;
+esac
+
+export LD_LIBRARY_PATH=$PMDK_LIB_PATH:$GLOBAL_LIB_PATH:$LD_LIBRARY_PATH
+export REMOTE_LD_LIBRARY_PATH=$REMOTE_PMDK_LIB_PATH:$GLOBAL_LIB_PATH:\$LD_LIBRARY_PATH
 
 #
 # When running static binary tests, append the build type to the binary
@@ -274,8 +310,6 @@ fi
 # The default is to turn on library logging to level 3 and save it to local files.
 # Tests that don't want it on, should override these environment variables.
 #
-export VMEM_LOG_LEVEL=3
-export VMEM_LOG_FILE=vmem$UNITTEST_NUM.log
 export PMEM_LOG_LEVEL=3
 export PMEM_LOG_FILE=pmem$UNITTEST_NUM.log
 export PMEMBLK_LOG_LEVEL=3
@@ -287,10 +321,6 @@ export PMEMOBJ_LOG_FILE=pmemobj$UNITTEST_NUM.log
 export PMEMPOOL_LOG_LEVEL=3
 export PMEMPOOL_LOG_FILE=pmempool$UNITTEST_NUM.log
 export PMREORDER_LOG_FILE=pmreorder$UNITTEST_NUM.log
-
-export VMMALLOC_POOL_SIZE=$((16 * 1024 * 1024))
-export VMMALLOC_LOG_LEVEL=3
-export VMMALLOC_LOG_FILE=vmmalloc$UNITTEST_NUM.log
 
 export OUT_LOG_FILE=out$UNITTEST_NUM.log
 export ERR_LOG_FILE=err$UNITTEST_NUM.log
@@ -450,7 +480,7 @@ function create_file() {
 	shift
 	for file in $*
 	do
-		$DD if=/dev/zero of=$file bs=1M count=$size iflag=count_bytes >> $PREP_LOG_FILE
+		$DD if=/dev/zero of=$file bs=1M count=$size iflag=count_bytes status=none >> $PREP_LOG_FILE
 	done
 }
 
@@ -669,6 +699,21 @@ function valgrind_ignore_warnings() {
 }
 
 #
+# valgrind_ignore_messages -- cuts off Valgrind messages that are irrelevant
+#	to the correctness of the test, but changes during Valgrind rebase
+#	usage: valgrind_ignore_messages <log-file>
+#
+function valgrind_ignore_messages() {
+	if [ -e "$1.match" ]; then
+		cat $1 | grep -v \
+			-e "For lists of detected and suppressed errors, rerun with: -s" \
+			-e "For counts of detected and suppressed errors, rerun with: -v" \
+			>  $1.tmp
+		mv $1.tmp $1
+	fi
+}
+
+#
 # get_trace -- return tracing tool command line if applicable
 #	usage: get_trace <check type> <log file> [<node>]
 #
@@ -735,8 +780,7 @@ function validate_valgrind_log() {
 		-e "Bad mempool" \
 		$1 >/dev/null ;
 	then
-		msg="failed"
-		[ -t 2 ] && command -v tput >/dev/null && msg="$(tput setaf 1)$msg$(tput sgr0)"
+		msg=$(interactive_red STDERR "failed")
 		echo -e "$UNITTEST_NAME $msg with Valgrind. See $1. Last 20 lines below." >&2
 		paste -d " " <(yes $UNITTEST_NAME $1 | head -n 20) <(tail -n 20 $1) >&2
 		false
@@ -790,16 +834,6 @@ function expect_normal_exit() {
 		export VALGRIND_OPTS="$VALGRIND_OPTS --suppressions=../memcheck-dlopen.supp"
 	fi
 
-	# in case of preloading libvmmalloc.so.1 force valgrind to not override malloc
-	if [ -n "$VALGRINDEXE" -a -n "$TEST_LD_PRELOAD" ]; then
-		if [ $(valgrind_version) -ge 312 ]; then
-			preload=`basename $TEST_LD_PRELOAD`
-		fi
-		if [ "$preload" == "$VMMALLOC" ]; then
-			export VALGRIND_OPTS="$VALGRIND_OPTS --soname-synonyms=somalloc=nouserintercepts"
-		fi
-	fi
-
 	local REMOTE_VALGRIND_LOG=0
 	if [ "$CHECK_TYPE" != "none" ]; then
 	        case "$1"
@@ -827,8 +861,7 @@ function expect_normal_exit() {
 
 	disable_exit_on_error
 
-	eval $ECHO LD_LIBRARY_PATH=$TEST_LD_LIBRARY_PATH LD_PRELOAD=$TEST_LD_PRELOAD \
-		$trace $*
+	eval $ECHO $trace "$*"
 	ret=$?
 
 	if [ $REMOTE_VALGRIND_LOG -eq 1 ]; then
@@ -847,7 +880,7 @@ function expect_normal_exit() {
 		else
 			msg="failed with exit code $ret"
 		fi
-		[ -t 2 ] && command -v tput >/dev/null && msg="$(tput setaf 1)$msg$(tput sgr0)"
+		msg=$(interactive_red STDERR $msg)
 
 		if [ -f $ERR_LOG_FILE ]; then
 			if [ "$UNITTEST_LOG_LEVEL" -ge "1" ]; then
@@ -859,26 +892,12 @@ function expect_normal_exit() {
 		else
 			echo -e "$UNITTEST_NAME $msg." >&2
 		fi
-		if [ "$CHECK_TYPE" != "none" -a -f $VALGRIND_LOG_FILE ]; then
-			dump_last_n_lines $VALGRIND_LOG_FILE
-		fi
 
 		# ignore Ctrl-C
 		if [ $ret != 130 ]; then
-			for f in $(get_files "node_.*${UNITTEST_NUM}\.log"); do
+			for f in $(get_files ".*[a-zA-Z_]${UNITTEST_NUM}\.log"); do
 				dump_last_n_lines $f
 			done
-
-			dump_last_n_lines $TRACE_LOG_FILE
-			dump_last_n_lines $PMEM_LOG_FILE
-			dump_last_n_lines $PMEMOBJ_LOG_FILE
-			dump_last_n_lines $PMEMLOG_LOG_FILE
-			dump_last_n_lines $PMEMBLK_LOG_FILE
-			dump_last_n_lines $PMEMPOOL_LOG_FILE
-			dump_last_n_lines $VMEM_LOG_FILE
-			dump_last_n_lines $VMMALLOC_LOG_FILE
-			dump_last_n_lines $RPMEM_LOG_FILE
-			dump_last_n_lines $RPMEMD_LOG_FILE
 		fi
 
 		[ $NODES_MAX -ge 0 ] && clean_all_remote_nodes
@@ -891,11 +910,13 @@ function expect_normal_exit() {
 			do
 				local log_file=node\_$node\_$VALGRIND_LOG_FILE
 				valgrind_ignore_warnings $new_log_file
+				valgrind_ignore_messages $new_log_file
 				validate_valgrind_log $new_log_file
 			done
 		else
 			if [ -f $VALGRIND_LOG_FILE ]; then
 				valgrind_ignore_warnings $VALGRIND_LOG_FILE
+				valgrind_ignore_messages $VALGRIND_LOG_FILE
 				validate_valgrind_log $VALGRIND_LOG_FILE
 			fi
 		fi
@@ -919,29 +940,17 @@ function expect_abnormal_exit() {
 		esac
 	fi
 
-	# in case of preloading libvmmalloc.so.1 force valgrind to not override malloc
-	if [ -n "$VALGRINDEXE" -a -n "$TEST_LD_PRELOAD" ]; then
-		if [ $(valgrind_version) -ge 312 ]; then
-			preload=`basename $TEST_LD_PRELOAD`
-		fi
-		if [ "$preload" == "$VMMALLOC" ]; then
-			export VALGRIND_OPTS="$VALGRIND_OPTS --soname-synonyms=somalloc=nouserintercepts"
-		fi
-	fi
-
 	if [ "$CHECK_TYPE" = "drd" ]; then
 		export VALGRIND_OPTS="$VALGRIND_OPTS --suppressions=../drd-log.supp"
 	fi
 
 	disable_exit_on_error
-	eval $ECHO ASAN_OPTIONS="detect_leaks=0 ${ASAN_OPTIONS}" \
-		LD_LIBRARY_PATH=$TEST_LD_LIBRARY_PATH LD_PRELOAD=$TEST_LD_PRELOAD $TRACE $*
+	eval $ECHO ASAN_OPTIONS="detect_leaks=0 ${ASAN_OPTIONS}" $TRACE "$*"
 	ret=$?
 	restore_exit_on_error
 
 	if [ "$ret" -eq "0" ]; then
-		msg="succeeded"
-		[ -t 2 ] && command -v tput >/dev/null && msg="$(tput setaf 1)$msg$(tput sgr0)"
+		msg=$(interactive_red STDERR "succeeded")
 
 		echo -e "$UNITTEST_NAME command $msg unexpectedly." >&2
 
@@ -999,7 +1008,7 @@ function require_unlimited_vm() {
 function require_linked_with_ndctl() {
 	[ "$1" == "" -o ! -x "$1" ] && \
 		fatal "$UNITTEST_NAME: ERROR: require_linked_with_ndctl() requires one argument - an executable file"
-	local lddndctl=$(LD_LIBRARY_PATH=$TEST_LD_LIBRARY_PATH ldd $1 | $GREP -ce "libndctl")
+	local lddndctl=$(ldd $1 | $GREP -ce "libndctl")
 	[ "$lddndctl" == "1" ] && return
 	msg "$UNITTEST_NAME: SKIP required: executable $1 linked with libndctl"
 	exit 0
@@ -1326,18 +1335,6 @@ function get_node_devdax_size() {
 }
 
 #
-# dax_get_alignment -- get the alignment of a device dax
-#
-function dax_get_alignment() {
-	major_hex=$(stat -c "%t" $1)
-	minor_hex=$(stat -c "%T" $1)
-	major_dec=$((16#$major_hex))
-	minor_dec=$((16#$minor_hex))
-	cat /sys/dev/char/$major_dec:$minor_dec/device/align
-}
-
-
-#
 # require_dax_device_node_alignments -- only allow script to continue if
 #    the internal Device DAX alignments on a remote nodes are as specified.
 # If necessary, it sorts DEVICE_DAX_PATH entries to match
@@ -1421,7 +1418,6 @@ require_dax_device_alignments() {
 	require_node_dax_device_alignments -1 $*
 }
 
-
 #
 # require_fs_type -- only allow script to continue for a certain fs type
 #
@@ -1437,7 +1433,6 @@ function require_fs_type() {
 	verbose_msg "$UNITTEST_NAME: SKIP fs-type $FS ($* required)"
 	exit 0
 }
-
 
 #
 # require_native_fallocate -- verify if filesystem supports fallocate
@@ -1497,7 +1492,7 @@ function require_fs_name() {
 		fi
 	done
 
-	echo "$UNITTEST_NAME: SKIP file system $fsname ($* required)"
+	msg "$UNITTEST_NAME: SKIP file system $fsname ($* required)"
 	exit 0
 }
 
@@ -1716,7 +1711,6 @@ function configure_valgrind() {
 #   for valgrind first
 #
 function valgrind_version_no_check() {
-	require_command bc
 	$VALGRINDEXE --version | sed "s/valgrind-\([0-9]*\)\.\([0-9]*\).*/\1*100+\2/" | bc
 }
 
@@ -1725,6 +1719,8 @@ function valgrind_version_no_check() {
 #	valgrind package is installed
 #
 function require_valgrind() {
+	# bc is used inside valgrind_version_no_check
+	require_command bc
 	require_no_asan
 	disable_exit_on_error
 	VALGRINDEXE=`which valgrind 2>/dev/null`
@@ -1930,29 +1926,6 @@ function require_binary() {
 }
 
 #
-# require_preload - continue script execution only if supplied
-#	executable does not generate SIGABRT
-#
-#	Used to check that LD_PRELOAD of, e.g., libvmmalloc is possible
-#
-#	usage: require_preload <errorstr> <executable> [<exec_args>]
-#
-function require_preload() {
-	msg=$1
-	shift
-	trap SIGABRT
-	disable_exit_on_error
-	ret=$(LD_LIBRARY_PATH=$TEST_LD_LIBRARY_PATH LD_PRELOAD=$TEST_LD_PRELOAD $* 2>&1 /dev/null)
-	ret=$?
-	restore_exit_on_error
-	if [ $ret == 134 ]; then
-		msg "$UNITTEST_NAME: SKIP: $msg not supported"
-		rm -f $1.core
-		exit 0
-	fi
-}
-
-#
 # require_sds -- continue script execution only if binary is compiled with
 #	shutdown state support
 #
@@ -1997,6 +1970,53 @@ function require_no_sds() {
 }
 
 #
+# is_ndctl_enabled -- check if binary is compiled with libndctl
+#
+#	usage: is_ndctl_enabled <binary>
+#
+function is_ndctl_enabled() {
+	local binary=$1
+	local dir=.
+	if [ -z "$binary" ]; then
+		fatal "is_ndctl_enabled: error: no binary found"
+	fi
+
+	strings ${binary} 2>&1 | \
+		grep -q "compiled with libndctl" && true
+
+	return $?
+}
+
+#
+# require_bb_enabled_by_default -- check if the binary has bad block
+#                                     checking feature enabled by default
+#
+#	usage: require_bb_enabled_by_default <binary>
+#
+function require_bb_enabled_by_default() {
+	if ! is_ndctl_enabled $1 &> /dev/null ; then
+		msg "$UNITTEST_NAME: SKIP bad block checking feature disabled by default"
+		exit 0
+	fi
+
+	return 0
+}
+
+#
+# require_bb_disabled_by_default -- check if the binary does not have bad
+#                                      block checking feature enabled by default
+#
+#	usage: require_bb_disabled_by_default <binary>
+#
+function require_bb_disabled_by_default() {
+	if is_ndctl_enabled $1 &> /dev/null ; then
+		msg "$UNITTEST_NAME: SKIP bad block checking feature enabled by default"
+		exit 0
+	fi
+	return 0
+}
+
+#
 # check_absolute_path -- continue script execution only if $DIR path is
 #                        an absolute path; do not resolve symlinks
 #
@@ -2020,12 +2040,10 @@ function run_command()
 	fi
 }
 
-
 #
 # validate_node_number -- validate a node number
 #
 function validate_node_number() {
-
 	[ $1 -gt $NODES_MAX ] \
 		&& fatal "error: node number ($1) greater than maximum allowed node number ($NODES_MAX)"
 	return 0
@@ -2112,7 +2130,10 @@ function require_node_libfabric() {
 	local version=${3:-1.4.2}
 
 	require_pkg libfabric "$version"
+	# fi_info can be found in libfabric-bin
+	require_command fi_info
 	require_node_pkg $N libfabric "$version"
+	require_command_node $N fi_info
 	if [ "$RPMEM_PROVIDER" == "verbs" ]; then
 		if ! fi_info --list | grep -q verbs; then
 			msg "$UNITTEST_NAME: SKIP libfabric not compiled with verbs provider"
@@ -2128,7 +2149,7 @@ function require_node_libfabric() {
 
 	local DIR=${NODE_WORKING_DIR[$N]}/$curtestdir
 	local COMMAND="$COMMAND ${NODE_ENV[$N]}"
-	COMMAND="$COMMAND LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:$REMOTE_LD_LIBRARY_PATH:${NODE_LD_LIBRARY_PATH[$N]}"
+	COMMAND="$COMMAND LD_LIBRARY_PATH=${NODE_LD_LIBRARY_PATH[$N]}:$REMOTE_LD_LIBRARY_PATH"
 	COMMAND="$COMMAND ../fip ${NODE_ADDR[$N]} $provider"
 
 	disable_exit_on_error
@@ -2389,7 +2410,7 @@ function run_on_node() {
 	local COMMAND="UNITTEST_NUM=$UNITTEST_NUM UNITTEST_NAME=$UNITTEST_NAME"
 	COMMAND="$COMMAND UNITTEST_LOG_LEVEL=1"
 	COMMAND="$COMMAND ${NODE_ENV[$N]}"
-	COMMAND="$COMMAND LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:$REMOTE_LD_LIBRARY_PATH:${NODE_LD_LIBRARY_PATH[$N]} $*"
+	COMMAND="$COMMAND LD_LIBRARY_PATH=${NODE_LD_LIBRARY_PATH[$N]}:$REMOTE_LD_LIBRARY_PATH $*"
 
 	run_command ssh $SSH_OPTS ${NODE[$N]} "cd $DIR && $COMMAND"
 	ret=$?
@@ -2421,7 +2442,7 @@ function run_on_node_background() {
 	local COMMAND="UNITTEST_NUM=$UNITTEST_NUM UNITTEST_NAME=$UNITTEST_NAME"
 	COMMAND="$COMMAND UNITTEST_LOG_LEVEL=1"
 	COMMAND="$COMMAND ${NODE_ENV[$N]}"
-	COMMAND="$COMMAND LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:$REMOTE_LD_LIBRARY_PATH:${NODE_LD_LIBRARY_PATH[$N]}"
+	COMMAND="$COMMAND LD_LIBRARY_PATH=${NODE_LD_LIBRARY_PATH[$N]}:$REMOTE_LD_LIBRARY_PATH"
 	COMMAND="$COMMAND ../ctrld $PID_FILE run $RUNTEST_TIMEOUT $*"
 
 	# register the PID file to be cleaned in case of an error
@@ -2509,6 +2530,17 @@ function kill_on_node() {
 }
 
 #
+# obj_pool_desc_size -- returns the obj_pool_desc_size macro value
+# in bytes wich is two times the actual pagesize.
+#
+# This should be use to calculate the minimum zero size for pool
+# creation on some tests.
+#
+function obj_pool_desc_size() {
+	echo "$(expr $(getconf PAGESIZE) \* 2)"
+}
+
+#
 # create_holey_file_on_node -- create holey files of a given length
 #   usage: create_holey_file_on_node <node> <size>
 #
@@ -2561,7 +2593,6 @@ function require_mmap_under_valgrind() {
 function setup() {
 
 	DIR=$DIR$SUFFIX
-	export VMMALLOC_POOL_DIR="$DIR"
 
 	# writes test working directory to temporary file
 	# that allows read location of data after test failure
@@ -2622,6 +2653,10 @@ function setup() {
 	if [ "$DEVDAX_TO_LOCK" == 1 ]; then
 		lock_devdax
 	fi
+
+	export PMEMBLK_CONF="fallocate.at_create=0;"
+	export PMEMOBJ_CONF="fallocate.at_create=0;"
+	export PMEMLOG_CONF="fallocate.at_create=0;"
 }
 
 #
@@ -2722,8 +2757,7 @@ function pass() {
 	else
 		tm=""
 	fi
-	msg="PASS"
-	[ -t 1 ] && command -v tput >/dev/null && msg="$(tput setaf 2)$msg$(tput sgr0)"
+	msg=$(interactive_green STDOUT "PASS")
 	if [ "$UNITTEST_LOG_LEVEL" -ge 1 ]; then
 		echo -e "$UNITTEST_NAME: $msg$tm"
 	fi
@@ -2998,7 +3032,7 @@ function init_rpmem_on_node() {
 		[ "$RPMEM_PM" == "APM" ] && CMD="$CMD PMEM_IS_PMEM_FORCE=1"
 
 		CMD="$CMD ${NODE_ENV[$slave]}"
-		CMD="$CMD LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:$REMOTE_LD_LIBRARY_PATH:${NODE_LD_LIBRARY_PATH[$slave]}"
+		CMD="$CMD LD_LIBRARY_PATH=${NODE_LD_LIBRARY_PATH[$slave]}:$REMOTE_LD_LIBRARY_PATH"
 		CMD="$CMD $trace ../rpmemd"
 		CMD="$CMD --log-file=$RPMEMD_LOG_FILE"
 		CMD="$CMD --log-level=$RPMEMD_LOG_LEVEL"
@@ -3272,11 +3306,11 @@ function get_pmemcheck_version()
 #
 # require_pmemcheck_version_ge - check if pmemcheck API
 # version is greater or equal to required value
-#	usage: require_pmemcheck_version_ge <major> <minor>
+#	usage: require_pmemcheck_version_ge <major> <minor> [binary]
 #
 function require_pmemcheck_version_ge()
 {
-	require_valgrind_tool pmemcheck
+	require_valgrind_tool pmemcheck $3
 
 	REQUIRE_MAJOR=$1
 	REQUIRE_MINOR=$2
@@ -3306,11 +3340,11 @@ function require_pmemcheck_version_ge()
 #
 # require_pmemcheck_version_lt - check if pmemcheck API
 # version is less than required value
-#	usage: require_pmemcheck_version_lt <major> <minor>
+#	usage: require_pmemcheck_version_lt <major> <minor> [binary]
 #
 function require_pmemcheck_version_lt()
 {
-	require_valgrind_tool pmemcheck
+	require_valgrind_tool pmemcheck $3
 
 	REQUIRE_MAJOR=$1
 	REQUIRE_MINOR=$2
@@ -3361,14 +3395,15 @@ function require_python3()
 }
 
 #
-# require_pmreorder -- check all necessarily conditions to run pmreorder
+# require_pmreorder -- check all necessary conditions to run pmreorder
+# usage: require_pmreorder [binary]
 #
 function require_pmreorder()
 {
 	# python3 and valgrind are necessary
 	require_python3
 	# pmemcheck is required to generate store_log
-	configure_valgrind pmemcheck force-enable
+	configure_valgrind pmemcheck force-enable $1
 	# pmreorder tool does not support unicode yet
 	require_no_unicode
 }
@@ -3387,7 +3422,7 @@ function pmreorder_run_tool()
 {
 	rm -f pmreorder$UNITTEST_NUM.log
 	disable_exit_on_error
-	LD_LIBRARY_PATH=$TEST_LD_LIBRARY_PATH $PYTHON_EXE $PMREORDER \
+	$PYTHON_EXE $PMREORDER \
 		-l store_log$UNITTEST_NUM.log \
 		-o pmreorder$UNITTEST_NUM.log \
 		-r $1 \
@@ -3407,8 +3442,7 @@ function pmreorder_expect_success()
 	ret=$(pmreorder_run_tool "$@")
 
 	if [ "$ret" -ne "0" ]; then
-		msg="failed with exit code $ret"
-		[ -t 2 ] && command -v tput >/dev/null && msg="$(tput setaf 1)$msg$(tput sgr0)"
+		msg=$(interactive_red STDERR "failed with exit code $ret")
 
 		# exit code 130 - script terminated by user (Control-C)
 		if [ "$ret" -ne "130" ]; then
@@ -3430,8 +3464,7 @@ function pmreorder_expect_failure()
 	ret=$(pmreorder_run_tool "$@")
 
 	if [ "$ret" -eq "0" ]; then
-		msg="succeeded"
-		[ -t 2 ] && command -v tput >/dev/null && msg="$(tput setaf 1)$msg$(tput sgr0)"
+		msg=$(interactive_red STDERR "succeeded")
 
 		echo -e "$UNITTEST_NAME command $msg unexpectedly." >&2
 
@@ -3452,7 +3485,7 @@ function pmreorder_create_store_log()
 	cp $1 "$1.pmr"
 	rm -f store_log$UNITTEST_NUM.log
 
-	LD_LIBRARY_PATH=$TEST_LD_LIBRARY_PATH $VALGRINDEXE \
+	$VALGRINDEXE \
 			--tool=pmemcheck -q \
 			--log-stores=yes \
 			--print-summary=no \
@@ -3524,13 +3557,83 @@ function require_max_devdax_size() {
 }
 
 #
-# require_nfit_tests_enabled - check if tests using the nfit_test kernel module are not enabled
+# require_max_block_size -- checks that block size is smaller or equal than requested
 #
-function require_nfit_tests_enabled() {
-	if [ "$ENABLE_NFIT_TESTS" != "y" ]; then
-		msg "$UNITTEST_NAME: SKIP: tests using the nfit_test kernel module are not enabled in testconfig.sh (ENABLE_NFIT_TESTS)"
+# usage: require_max_block_size <file> <max-block-size>
+#
+function require_max_block_size() {
+	cur_sz=$(stat --file-system --format=%S $1)
+	max_size=$2
+	if [ $cur_sz -gt $max_size ]; then
+		msg "$UNITTEST_NAME: SKIP: block size of $1 is too big for this test (max $2 required)"
 		exit 0
 	fi
+}
+
+#
+# require_badblock_tests_enabled - check if tests for bad block support are not enabled
+# Input arguments:
+# 1) test device type
+#
+function require_badblock_tests_enabled() {
+	require_sudo_allowed
+	require_command ndctl
+	require_bb_enabled_by_default $PMEMPOOL$EXESUFFIX
+
+	if [ "$BADBLOCK_TEST_TYPE" == "nfit_test" ]; then
+
+		require_kernel_module nfit_test
+
+		# nfit_test dax device is created by the test and is
+		# used directly - no device dax path is needed to be provided by the
+		# user. Some tests though may use an additional filesystem for the
+		# pool replica - hence 'any' filesystem is required.
+		if [ $1 == "dax_device" ]; then
+			require_fs_type any
+
+		# nfit_test block device is created by the test and mounted on
+		# a filesystem of any type provided by the user
+		elif [ $1 == "block_device" ]; then
+			require_fs_type any
+		fi
+
+	elif [ "$BADBLOCK_TEST_TYPE" == "real_pmem" ]; then
+
+		if [ $1 == "dax_device" ]; then
+			require_fs_type any
+			require_dax_devices 1
+			require_binary $DAXIO$EXESUFFIX
+
+		elif [ $1 == "block_device" ]; then
+			require_fs_type pmem
+		fi
+
+	else
+		msg "$UNITTEST_NAME: SKIP: bad block tests are not enabled in testconfig.sh"
+		exit 0
+	fi
+}
+
+#
+# require_badblock_tests_enabled_node - check if tests for bad block support are not enabled
+# on given remote node
+#
+function require_badblock_tests_enabled_node() {
+	require_sudo_allowed_node $1
+	require_command_node $1 ndctl
+	require_bb_enabled_by_default $PMEMPOOL$EXESUFFIX
+
+	if [ "$BADBLOCK_TEST_TYPE" == "nfit_test" ]; then
+		require_kernel_module_node $1 nfit_test
+	elif [ "$BADBLOCK_TEST_TYPE" == "real_pmem" ]; then
+		:
+	else
+		msg "$UNITTEST_NAME: SKIP: bad block tests are not enabled in testconfig.sh"
+		exit 0
+	fi
+	require_sudo_allowed
+	require_kernel_module nfit_test
+	require_command ndctl
 }
 
 #

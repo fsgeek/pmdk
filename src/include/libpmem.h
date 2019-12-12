@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -37,11 +37,13 @@
  *
  * libpmem provides support for using raw pmem directly.
  *
- * See libpmem(3) for details.
+ * See libpmem(7) for details.
  */
 
 #ifndef LIBPMEM_H
 #define LIBPMEM_H 1
+
+#include <sys/types.h>
 
 #ifdef _WIN32
 #include <pmemcompat.h>
@@ -61,8 +63,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <sys/types.h>
 
 /*
  * This limit is set arbitrary to incorporate a pool header and required

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright 2017-2018, Intel Corporation
+# Copyright 2017-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -36,12 +36,12 @@
 
 set -e
 
-OS=$1
+OS=$2
 
 echo "==== clone ndctl repo ===="
 git clone https://github.com/pmem/ndctl.git
 cd ndctl
-git checkout tags/v60.1
+git checkout $1
 
 if [ "$OS" = "fedora" ]; then
 
@@ -57,8 +57,8 @@ git archive --format=tar --prefix="ndctl-${VERSION}/" HEAD | gzip > "$RPMDIR/SOU
 
 echo "==== build ndctl ===="
 ./autogen.sh
-./configure
-make
+./configure --disable-docs
+make -j$(nproc)
 
 echo "==== build ndctl packages ===="
 rpmbuild -ba $SPEC
@@ -73,11 +73,11 @@ else
 
 echo "==== build ndctl ===="
 ./autogen.sh
-./configure
-make
+./configure --disable-docs
+make -j$(nproc)
 
 echo "==== install ndctl ===="
-make install
+make -j$(nproc) install
 
 echo "==== cleanup ===="
 

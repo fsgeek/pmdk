@@ -7,7 +7,7 @@ header: PMDK
 date: pmem Tools version 1.4
 ...
 
-[comment]: <> (Copyright 2016-2017, Intel Corporation)
+[comment]: <> (Copyright 2016-2018, Intel Corporation)
 
 [comment]: <> (Redistribution and use in source and binary forms, with or without)
 [comment]: <> (modification, are permitted provided that the following conditions)
@@ -46,7 +46,6 @@ date: pmem Tools version 1.4
 
 **pmempool-sync** - Synchronize replicas or their parts within a pool set.
 
-
 # SYNOPSIS #
 
 ```
@@ -79,8 +78,8 @@ be opened are recreated.=e=)
 
 : Fix bad blocks - it causes creating or reading special recovery files.
 When bad blocks are detected, special recovery files have to be created
-in order to fix them safely. A separate recovery file is created per each part
-containing bad blocks. The recovery files are created in the same directory
+in order to fix them safely. A separate recovery file is created for each part
+of the pool. The recovery files are created in the same directory
 where the poolset file is located using the following name pattern:
 \<poolset-file-name\> _r \<replica-number\> _p \<part-number\> _badblocks.txt
 These recovery files are automatically removed if the sync operation finishes
@@ -114,7 +113,6 @@ viability of synchronization.
 `-h, --help`
 
 : Display help message and exit.
-
 
 # SEE ALSO #
 

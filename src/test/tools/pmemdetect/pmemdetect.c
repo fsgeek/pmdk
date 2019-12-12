@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -45,6 +45,7 @@
 #include "libpmem.h"
 #include "file.h"
 #include "os.h"
+#include "util.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -298,7 +299,6 @@ supports_map_sync(const char *path)
 	if (flags & PMEM_FILE_CREATE && !(flags & PMEM_FILE_TMPFILE))
 		util_unlink(path);
 
-
 	return ret;
 }
 
@@ -306,6 +306,7 @@ int
 main(int argc, char *argv[])
 {
 #ifdef _WIN32
+	util_suppress_errmsg();
 	wchar_t **wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
 	for (int i = 0; i < argc; i++) {
 		argv[i] = util_toUTF8(wargv[i]);

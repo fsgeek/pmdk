@@ -1,5 +1,5 @@
 #
-# Copyright 2014-2018, Intel Corporation
+# Copyright 2014-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -71,17 +71,21 @@ OBJ_TESTS = \
 	obj_sync\
 	\
 	obj_action\
+	obj_alloc\
+	obj_badblock\
 	obj_bucket\
 	obj_check\
 	obj_constructor\
+	obj_critnib\
+	obj_critnib_mt\
 	obj_ctl_alignment\
 	obj_ctl_alloc_class\
 	obj_ctl_alloc_class_config\
+	obj_ctl_arenas\
 	obj_ctl_config\
 	obj_ctl_debug\
 	obj_ctl_heap_size\
 	obj_ctl_stats\
-	obj_cuckoo\
 	obj_debug\
 	obj_direct\
 	obj_direct_volatile\
@@ -139,6 +143,7 @@ OBJ_TESTS = \
 	obj_tx_mt\
 	obj_tx_realloc\
 	obj_tx_strdup\
+	obj_ulog_size\
 	obj_zones
 
 OBJ_REMOTE_DEPS = \
@@ -149,7 +154,8 @@ OBJ_REMOTE_DEPS = \
 OBJ_REMOTE_TESTS = \
 	obj_rpmem_basic_integration\
 	obj_rpmem_heap_interrupt\
-	obj_rpmem_heap_state
+	obj_rpmem_heap_state\
+	obj_check_remote
 
 OTHER_TESTS = \
 	arch_flags\
@@ -157,7 +163,11 @@ OTHER_TESTS = \
 	checksum\
 	compat_incompat_features\
 	ctl_prefault\
+	ctl_cow\
+	getopt\
 	magic\
+	mmap\
+	mmap_fixed\
 	out_err\
 	out_err_mt\
 	pmemobjcli\
@@ -199,6 +209,7 @@ PMEM_TESTS = \
 	pmem_is_pmem\
 	pmem_is_pmem_posix\
 	pmem_map_file\
+	pmem_map_file_trunc\
 	pmem_has_auto_flush\
 	pmem_deep_persist\
 	pmem_memcpy\
@@ -208,6 +219,17 @@ PMEM_TESTS = \
 	pmem_movnt_align\
 	pmem_valgr_simple\
 	pmem_unmap
+
+PMEM2_TESTS = \
+	pmem2_compat\
+	pmem2_config\
+	pmem2_config_get_alignment\
+	pmem2_config_get_file_size\
+	pmem2_granularity\
+	pmem2_include\
+	pmem2_integration\
+	pmem2_granularity_detection\
+	pmem2_map
 
 PMEMPOOL_TESTS = \
 	pmempool_check\
@@ -235,55 +257,19 @@ RPMEM_TESTS = \
 	rpmemd_obc\
 	rpmemd_util
 
-VMEM_TESTS = \
-	vmem_aligned_alloc\
-	vmem_calloc\
-	vmem_check_allocations\
-	vmem_check_version\
-	vmem_check\
-	vmem_create\
-	vmem_create_error\
-	vmem_create_in_region\
-	vmem_custom_alloc\
-	vmem_delete\
-	vmem_malloc\
-	vmem_malloc_usable_size\
-	vmem_mix_allocations\
-	vmem_multiple_pools\
-	vmem_out_of_memory\
-	vmem_pages_purging\
-	vmem_realloc\
-	vmem_realloc_inplace\
-	vmem_stats\
-	vmem_strdup\
-	vmem_valgrind\
-	vmem_valgrind_region
-
-VMMALLOC_DUMMY_FUNCS_DEPS = \
-	vmmalloc_dummy_funcs
-
-VMMALLOC_DUMMY_FUNCS_TESTS = \
-	vmmalloc_malloc_hooks\
-	vmmalloc_memalign\
-	vmmalloc_valloc
-
-VMMALLOC_TESTS = \
-	vmmalloc_calloc\
-	vmmalloc_check_allocations\
-	vmmalloc_fork\
-	vmmalloc_init\
-	vmmalloc_malloc\
-	vmmalloc_malloc_usable_size\
-	vmmalloc_out_of_memory\
-	vmmalloc_realloc\
-	vmmalloc_valgrind
-
 EXAMPLES_TESTS = \
 	ex_libpmem\
+	ex_libpmem2\
 	ex_libpmemblk\
 	ex_libpmemlog\
 	ex_libpmemobj\
 	ex_linkedlist
+
+RPMEM_EXAMPLES_TESTS = \
+	ex_librpmem_manpage\
+	ex_librpmem_basic\
+	ex_librpmem_hello\
+	ex_librpmem_fibonacci
 
 LIBPMEMPOOL_DEPS = \
 	libpmempool_api
@@ -292,6 +278,7 @@ LIBPMEMPOOL_TESTS = \
 	libpmempool_include\
 	libpmempool_backup\
 	libpmempool_bttdev\
+	libpmempool_check_version\
 	libpmempool_feature\
 	libpmempool_map_flog\
 	libpmempool_rm
@@ -306,6 +293,7 @@ DAXIO_TESTS = \
 	daxio
 
 PMREORDER_TESTS = \
+	pmreorder_flushes\
 	pmreorder_simple\
 	pmreorder_stack
 
@@ -315,11 +303,8 @@ LOCAL_TESTS = \
 	$(LOG_TESTS)\
 	$(OTHER_TESTS)\
 	$(PMEM_TESTS)\
+	$(PMEM2_TESTS)\
 	$(PMEMPOOL_TESTS)\
-	$(VMEM_TESTS)\
-	$(VMMALLOC_DUMMY_FUNCS_TESTS)\
-	$(VMMALLOC_TESTS)\
-	$(EXAMPLES_TESTS)\
 	$(LIBPMEMPOOL_TESTS)\
 	$(LIBPMEMPOOL_MOD_TESTS)\
 	$(DAXIO_TESTS)\
@@ -337,6 +322,11 @@ REMOTE_TESTS = \
 	pmempool_sync_remote\
 	pmempool_transform_remote
 
+ifneq ($(BUILD_EXAMPLES),n)
+	LOCAL_TESTS += $(EXAMPLES_TESTS)
+	REMOTE_TESTS += $(RPMEM_EXAMPLES_TESTS)
+endif
+
 TESTS = \
 	$(LOCAL_TESTS)\
 	$(REMOTE_TESTS)
@@ -344,7 +334,6 @@ TESTS = \
 TESTS_BUILD = \
 	$(TEST_DEPS)\
 	$(OBJ_DEPS)\
-	$(VMMALLOC_DUMMY_FUNCS_DEPS)\
 	$(LIBPMEMPOOL_DEPS)\
 	$(LIBPMEMPOOL_MOD_DEPS)\
 	$(TESTS)
@@ -358,13 +347,14 @@ format  : TARGET = format
 check   : TARGET = check
 pcheck  : TARGET = pcheck
 sparse  : TARGET = sparse
+pycheck : TARGET = pycheck
 
 DIR_SYNC=$(TOP)/src/test/.sync-dir
 SYNC_EXT=synced
 TESTCONFIG=$(TOP)/src/test/testconfig.sh
 FILE_MAX_DAX_DEVICES=$(TOP)/src/test/tools/anonymous_mmap/max_dax_devices
 
-all test format sparse: $(TESTS_BUILD)
+all test format sparse: $(TESTS_BUILD) envconfig.sh envconfig.py
 
 cstyle: $(TESTS_BUILD)
 	$(CHECK_SHEBANG) $(foreach dir,$(TESTS_BUILD),$(dir)/TEST? $(dir)/TEST??)
@@ -373,17 +363,23 @@ clean clobber: $(TESTS_BUILD)
 	$(RM) -r $(DIR_SYNC)
 	$(RM) *.$(SYNC_EXT)
 	$(RM) $(FILE_MAX_DAX_DEVICES)
+	$(RM) envconfig.sh envconfig.py
 
-$(TESTS) $(OBJ_DEPS) $(LIBPMEMPOOL_DEPS) $(LIBPMEMPOOL_MOD_DEPS) $(VMMALLOC_DUMMY_FUNCS_DEPS): $(TEST_DEPS)
+$(TESTS) $(OBJ_DEPS) $(LIBPMEMPOOL_DEPS) $(LIBPMEMPOOL_MOD_DEPS): $(TEST_DEPS)
 
 $(OBJ_TESTS): $(OBJ_DEPS)
 $(OBJ_REMOTE_TESTS): $(OBJ_REMOTE_DEPS)
 $(LIBPMEMPOOL_TESTS): $(LIBPMEMPOOL_DEPS)
 $(LIBPMEMPOOL_MOD_TESTS): $(LIBPMEMPOOL_MOD_DEPS)
-$(VMMALLOC_DUMMY_FUNCS_TESTS): $(VMMALLOC_DUMMY_FUNCS_DEPS)
 
 $(TESTS_BUILD):
 	$(MAKE) -C $@ $(TARGET)
+
+envconfig.sh:
+	@printf "# autogenerated file\nGLOBAL_LIB_PATH=%s\n" "$(LIBNDCTL_LD_LIBRARY_PATHS)" > envconfig.sh
+
+envconfig.py:
+	@printf "# autogenerated file\nconfig = {\n  'GLOBAL_LIB_PATH': '%s'\n}\n" "$(LIBNDCTL_LD_LIBRARY_PATHS)" > envconfig.py
 
 require-rpmem:
 ifneq ($(BUILD_RPMEM),y)
@@ -402,6 +398,10 @@ memcheck-summary-leaks:
 check:
 	@./RUNTESTS $(RUNTEST_OPTIONS) $(LOCAL_TESTS)
 	$(MAKE) check-remote-quiet-conditional
+	@echo "No failures."
+
+pycheck:
+	@./RUNTESTS.py $(subst nondebug,release,$(RUNTEST_OPTIONS))
 	@echo "No failures."
 
 check-remote-quiet-conditional:
@@ -443,6 +443,10 @@ pcheck-pmem: TARGET = pcheck
 pcheck-pmem: $(PMEM_TESTS)
 	@echo "No failures."
 
+pcheck-pmem2: TARGET = pcheck
+pcheck-pmem2: $(PMEM2_TESTS)
+	@echo "No failures."
+
 pcheck-rpmem: TARGET = pcheck
 pcheck-rpmem: $(RPMEM_TESTS)
 	@echo "No failures."
@@ -453,14 +457,6 @@ pcheck-pmempool: $(PMEMPOOL_TESTS)
 
 pcheck-libpmempool: TARGET = pcheck
 pcheck-libpmempool: $(LIBPMEMPOOL_TESTS)
-	@echo "No failures."
-
-pcheck-vmem: TARGET = pcheck
-pcheck-vmem: $(VMEM_TESTS)
-	@echo "No failures."
-
-pcheck-vmmalloc: TARGET = pcheck
-pcheck-vmmalloc: $(VMMALLOC_TESTS)
 	@echo "No failures."
 
 pcheck-local-quiet: TARGET = pcheck
@@ -500,7 +496,7 @@ ifneq ($(SKIP_SYNC_REMOTES),y)
 endif
 
 .PHONY: all check clean clobber cstyle pcheck pcheck-blk pcheck-log pcheck-obj\
-	 pcheck-other pcheck-pmem pcheck-pmempool pcheck-vmem pcheck-vmmalloc\
-	 test unittest tools check-remote format pcheck-libpmempool\
+	 pcheck-other pcheck-pmem pcheck-pmempool\
+	 test unittest tools check-remote format pcheck-libpmempool pycheck\
 	 pcheck-rpmem pcheck-local pcheck-remote sync-remotes $(TESTS_BUILD)\
 	 require-rpmem check-remote-quiet check-remote-quiet-conditional

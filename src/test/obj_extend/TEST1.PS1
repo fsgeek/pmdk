@@ -1,5 +1,5 @@
 #
-# Copyright 2018, Intel Corporation
+# Copyright 2018-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -34,7 +34,6 @@
 # src/test/obj_extend/TEST1 -- unit test for extending the pool
 #
 
-# standard unit test setup
 . ..\unittest\unittest.ps1
 
 require_test_type medium
@@ -51,7 +50,7 @@ create_poolset $DIR\testset2 `
 	($Env:RESVSIZE + ":" + $DIR + "\testdir21:d") `
 	O SINGLEHDR
 
-$Env:PMEMOBJ_CONF="heap.size.granularity=$Env:GRANULARITY"
+$Env:PMEMOBJ_CONF += "heap.size.granularity=$Env:GRANULARITY;"
 expect_normal_exit $Env:EXE_DIR\obj_extend$Env:EXESUFFIX $DIR\testset2
 
 check

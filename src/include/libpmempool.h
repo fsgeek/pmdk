@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,11 +33,15 @@
 /*
  * libpmempool.h -- definitions of libpmempool entry points
  *
- * See libpmempool(3) for details.
+ * See libpmempool(7) for details.
  */
 
 #ifndef LIBPMEMPOOL_H
 #define LIBPMEMPOOL_H 1
+
+#include <stdint.h>
+#include <stddef.h>
+#include <limits.h>
 
 #ifdef _WIN32
 #include <pmemcompat.h>
@@ -77,11 +81,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <stdint.h>
-#include <stddef.h>
-#include <limits.h>
-
 
 /* PMEMPOOL CHECK */
 
@@ -159,7 +158,6 @@ enum pmempool_check_result pmempool_check_end(PMEMpoolcheck *ppc);
 #define PMEMPOOL_RM_POOLSET_LOCAL	(1U << 1) /* remove local poolsets */
 #define PMEMPOOL_RM_POOLSET_REMOTE	(1U << 2) /* remove remote poolsets */
 
-
 /*
  * LIBPMEMPOOL SYNC
  */
@@ -173,7 +171,6 @@ enum pmempool_check_result pmempool_check_end(PMEMpoolcheck *ppc);
  */
 #define PMEMPOOL_SYNC_DRY_RUN		(1U << 1)
 
-
 /*
  * LIBPMEMPOOL TRANSFORM
  */
@@ -182,7 +179,6 @@ enum pmempool_check_result pmempool_check_end(PMEMpoolcheck *ppc);
  * do not apply changes, only check if operation is viable
  */
 #define PMEMPOOL_TRANSFORM_DRY_RUN	(1U << 1)
-
 
 /*
  * PMEMPOOL_MAJOR_VERSION and PMEMPOOL_MINOR_VERSION provide the current version

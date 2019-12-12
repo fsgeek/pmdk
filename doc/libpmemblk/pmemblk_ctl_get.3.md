@@ -7,7 +7,7 @@ header: PMDK
 date: pmemblk API version 1.1
 ...
 
-[comment]: <> (Copyright 2018, Intel Corporation)
+[comment]: <> (Copyright 2018-2019, Intel Corporation)
 
 [comment]: <> (Redistribution and use in source and binary forms, with or without)
 [comment]: <> (modification, are permitted provided that the following conditions)
@@ -43,14 +43,12 @@ date: pmemblk API version 1.1
 [CTL EXTERNAL CONFIGURATION](#ctl-external-configuration)<br />
 [SEE ALSO](#see-also)<br />
 
-
 # NAME #
 
 _UW(pmemblk_ctl_get),
 _UW(pmemblk_ctl_set),
 _UW(pmemblk_ctl_exec)
 - Query and modify libpmemblk internal behavior (EXPERIMENTAL)
-
 
 # SYNOPSIS #
 
@@ -67,15 +65,26 @@ _UWFUNCR2(int, pmemblk_ctl_exec, PMEMblkpool *pbp, *name, void *arg,
 
 _UNICODE()
 
-
 # DESCRIPTION #
 
 The _UW(pmemblk_ctl_get), _UW(pmemblk_ctl_set) and _UW(pmemblk_ctl_exec)
 functions provide a uniform interface for querying and modifying the internal
 behavior of **libpmemblk**(7) through the control (CTL) namespace.
 
-See more in **pmem_ctl**(5) man page.
+The *name* argument specifies an entry point as defined in the CTL namespace
+specification. The entry point description specifies whether the extra *arg* is
+required. Those two parameters together create a CTL query. The functions and
+the entry points are thread-safe unless
+indicated otherwise below. If there are special conditions for calling an entry
+point, they are explicitly stated in its description. The functions propagate
+the return value of the entry point. If either *name* or *arg* is invalid, -1
+is returned.
 
+If the provided ctl query is valid, the CTL functions will always return 0
+on success and -1 on failure, unless otherwise specified in the entry point
+description.
+
+See more in **pmem_ctl**(5) man page.
 
 # CTL NAMESPACE #
 
@@ -99,7 +108,16 @@ sds.at_create | rw | global | int | int | - | boolean
 
 If set, force-enables or force-disables SDS feature during pool creation.
 Affects only the _UW(pmemblk_create) function. See **pmempool_feature_query**(3)
-for informations about SDS (SHUTDOWN_STATE) feature.
+for information about SDS (SHUTDOWN_STATE) feature.
+
+Always returns 0.
+
+copy_on_write.at_open | rw | global | int | int | - | boolean
+
+If set, pool is mapped in such a way that modifications don't reach the
+underlying medium. From the user's perspective this means that when the pool
+is closed all changes are reverted. This feature is not supported for pools
+located on Device DAX.
 
 Always returns 0.
 
@@ -116,7 +134,6 @@ The second method of loading an external configuration is to set the
 a sequence of ctl queries.
 
 See more in **pmem_ctl**(5) man page.
-
 
 # SEE ALSO #
 

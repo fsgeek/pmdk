@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright 2017-2018, Intel Corporation
+# Copyright 2017-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -48,7 +48,7 @@ export COVERITY_SCAN_PROJECT_NAME="$TRAVIS_REPO_SLUG"
 [[ "$TRAVIS_EVENT_TYPE" == "cron" ]] \
 	&& export COVERITY_SCAN_BRANCH_PATTERN="master" \
 	|| export COVERITY_SCAN_BRANCH_PATTERN="coverity_scan"
-export COVERITY_SCAN_BUILD_COMMAND="make -j all"
+export COVERITY_SCAN_BUILD_COMMAND="make -j$(nproc) all"
 
 cd $WORKDIR
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -62,10 +62,22 @@
 #define SIZEOF_LIST_HEAD_V3 (SIZEOF_PMEMOID_V3 + SIZEOF_LOCK_V3)
 #define SIZEOF_LANE_SECTION_V3 (1024)
 #define SIZEOF_LANE_V3 (3 * SIZEOF_LANE_SECTION_V3)
-#define SIZEOF_ULOG_V4 (64)
+#define SIZEOF_ULOG_V4 (CACHELINE_SIZE)
 #define SIZEOF_ULOG_BASE_ENTRY_V4 (8)
 #define SIZEOF_ULOG_VAL_ENTRY_V4 (16)
 #define SIZEOF_ULOG_BUF_ENTRY_V4 (24)
+
+#if CACHELINE_SIZE == 128
+#define SIZEOF_LANE_UNDO_SIZE (1920)
+#define SIZEOF_LANE_REDO_EXTERNAL_SIZE (640)
+#define SIZEOF_LANE_REDO_INTERNAL_SIZE (128)
+#elif CACHELINE_SIZE == 64
+#define SIZEOF_LANE_UNDO_SIZE (2048)
+#define SIZEOF_LANE_REDO_EXTERNAL_SIZE (640)
+#define SIZEOF_LANE_REDO_INTERNAL_SIZE (192)
+#else
+#error "Unknown cacheline size"
+#endif
 
 POBJ_LAYOUT_BEGIN(layout);
 POBJ_LAYOUT_ROOT(layout, struct foo);
@@ -159,6 +171,8 @@ main(int argc, char *argv[])
 	ASSERT_ALIGNED_FIELD(struct ulog, checksum);
 	ASSERT_ALIGNED_FIELD(struct ulog, next);
 	ASSERT_ALIGNED_FIELD(struct ulog, capacity);
+	ASSERT_ALIGNED_FIELD(struct ulog, gen_num);
+	ASSERT_ALIGNED_FIELD(struct ulog, flags);
 	ASSERT_ALIGNED_FIELD(struct ulog, unused);
 	ASSERT_ALIGNED_CHECK(struct ulog);
 	UT_COMPILE_ERROR_ON(sizeof(struct ulog) !=
@@ -229,7 +243,19 @@ main(int argc, char *argv[])
 	ASSERT_ALIGNED_CHECK(struct lane_layout);
 	UT_COMPILE_ERROR_ON(sizeof(struct lane_layout) !=
 		SIZEOF_LANE_V3);
-
+	UT_COMPILE_ERROR_ON(LANE_UNDO_SIZE != SIZEOF_LANE_UNDO_SIZE);
+	UT_COMPILE_ERROR_ON(LANE_REDO_EXTERNAL_SIZE !=
+		SIZEOF_LANE_REDO_EXTERNAL_SIZE);
+	UT_COMPILE_ERROR_ON(LANE_REDO_INTERNAL_SIZE !=
+		SIZEOF_LANE_REDO_INTERNAL_SIZE);
 
 	DONE(NULL);
 }
+
+#ifdef _MSC_VER
+/*
+ * Since libpmemobj is linked statically, we need to invoke its ctor/dtor.
+ */
+MSVC_CONSTR(libpmemobj_init)
+MSVC_DESTR(libpmemobj_fini)
+#endif

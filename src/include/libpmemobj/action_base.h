@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018, Intel Corporation
+ * Copyright 2017-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -52,6 +52,11 @@ enum pobj_action_type {
 	POBJ_MAX_ACTION_TYPE
 };
 
+struct pobj_action_heap {
+	/* offset to the element being freed/allocated */
+	uint64_t offset;
+};
+
 struct pobj_action {
 	/*
 	 * These fields are internal for the implementation and are not
@@ -63,16 +68,15 @@ struct pobj_action {
 	enum pobj_action_type type;
 	uint32_t data[3];
 	union {
-		struct {
-			/* offset to the element being freed/allocated */
-			uint64_t offset;
-		} heap;
+		struct pobj_action_heap heap;
 		uint64_t data2[14];
 	};
 };
 
 #define POBJ_ACTION_XRESERVE_VALID_FLAGS\
-	(POBJ_XALLOC_CLASS_MASK | POBJ_XALLOC_ZERO)
+	(POBJ_XALLOC_CLASS_MASK |\
+	POBJ_XALLOC_ARENA_MASK |\
+	POBJ_XALLOC_ZERO)
 
 PMEMoid pmemobj_reserve(PMEMobjpool *pop, struct pobj_action *act,
 	size_t size, uint64_t type_num);
@@ -85,6 +89,8 @@ void pmemobj_defer_free(PMEMobjpool *pop, PMEMoid oid, struct pobj_action *act);
 int pmemobj_publish(PMEMobjpool *pop, struct pobj_action *actv,
 	size_t actvcnt);
 int pmemobj_tx_publish(struct pobj_action *actv, size_t actvcnt);
+int pmemobj_tx_xpublish(struct pobj_action *actv, size_t actvcnt,
+		uint64_t flags);
 
 void pmemobj_cancel(PMEMobjpool *pop, struct pobj_action *actv, size_t actvcnt);
 

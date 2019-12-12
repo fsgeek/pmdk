@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018, Intel Corporation
+ * Copyright 2017-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -79,7 +79,7 @@ CTL_WRITE_HANDLER(enabled)(void *ctx,
 	return 0;
 }
 
-static struct ctl_argument CTL_ARG(enabled) = CTL_ARG_BOOLEAN;
+static const struct ctl_argument CTL_ARG(enabled) = CTL_ARG_BOOLEAN;
 
 static const struct ctl_node CTL_NODE(stats)[] = {
 	CTL_CHILD(heap),
@@ -95,8 +95,14 @@ struct stats *
 stats_new(PMEMobjpool *pop)
 {
 	struct stats *s = Malloc(sizeof(*s));
+	if (s == NULL) {
+		ERR("!Malloc");
+		return NULL;
+	}
+
 	s->enabled = 0;
 	s->persistent = &pop->stats_persistent;
+	VALGRIND_ADD_TO_GLOBAL_TX_IGNORE(s->persistent, sizeof(*s->persistent));
 	s->transient = Zalloc(sizeof(struct stats_transient));
 	if (s->transient == NULL)
 		goto error_transient_alloc;

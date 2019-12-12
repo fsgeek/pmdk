@@ -7,7 +7,7 @@ header: PMDK
 date: pmem API version 1.1
 ...
 
-[comment]: <> (Copyright 2017, Intel Corporation)
+[comment]: <> (Copyright 2017-2018, Intel Corporation)
 
 [comment]: <> (Redistribution and use in source and binary forms, with or without)
 [comment]: <> (modification, are permitted provided that the following conditions)
@@ -42,7 +42,6 @@ date: pmem API version 1.1
 [RETURN VALUE](#return-value)<br />
 [SEE ALSO](#see-also)<br />
 
-
 # NAME #
 
 **pmem_flush**(), **pmem_drain**(),
@@ -50,7 +49,6 @@ date: pmem API version 1.1
 **pmem_deep_flush**(), **pmem_deep_drain**(), **pmem_deep_persist**(),
 **pmem_has_hw_drain**(), **pmem_has_auto_flush**() - check persistency,
 				store persistent data and delete mappings
-
 
 # SYNOPSIS #
 
@@ -68,13 +66,11 @@ int pmem_has_auto_flush(void); (EXPERIMENTAL)
 int pmem_has_hw_drain(void);
 ```
 
-
 # DESCRIPTION #
 
 The functions in this section provide access to the stages of flushing
 to persistence, for the less common cases where an application needs more
 control of the flushing operations than the **pmem_persist**() function.
-
 
 >WARNING:
 Using **pmem_persist**() on a range where **pmem_is_pmem**(3)
@@ -163,7 +159,7 @@ the most reliable persistence domain available to software rather than depending
 automatic WPQ (write pending queue) flush on power failure (ADR).
 
 The **pmem_deep_flush**() and **pmem_deep_drain**() functions provide
-partial varsions of **pmem_deep_persist**() function.
+partial versions of **pmem_deep_persist**() function.
 **pmem_deep_persist**() can be thought of as this:
 
 ```
@@ -190,7 +186,6 @@ mechanism.
 The **pmem_has_hw_drain**() function checks if the machine
 supports an explicit *hardware drain*
 instruction for persistent memory.
-
 
 # RETURN VALUE #
 
@@ -220,7 +215,6 @@ function always returns false. Despite that, programs using
 **pmem_flush**() to flush ranges of memory should still follow up by calling
 **pmem_drain**() once to ensure the flushes are complete. As mentioned above,
 **pmem_persist**() handles calling both **pmem_flush**() and **pmem_drain**().
-
 
 # SEE ALSO #
 

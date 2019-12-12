@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -85,11 +85,11 @@
 #define _UNITTEST_H 1
 
 #include <libpmem.h>
+#include <libpmem2.h>
 #include <libpmemblk.h>
 #include <libpmemlog.h>
 #include <libpmemobj.h>
 #include <libpmempool.h>
-#include <libvmem.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -542,12 +542,11 @@ unsigned ut_strtou(const char *file, int line, const char *func,
 #define ut_jmp_buf_t jmp_buf
 #define ut_siglongjmp(b) longjmp(b, 1)
 #define ut_sigsetjmp(b) setjmp(b)
-static DWORD ErrMode;
-static BOOL Suppressed = FALSE;
-static UINT AbortBehave;
 #endif
 void ut_suppress_errmsg(void);
 void ut_unsuppress_errmsg(void);
+void ut_suppress_crt_assert(void);
+void ut_unsuppress_crt_assert(void);
 /*
  * signals...
  */
@@ -787,7 +786,6 @@ void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 #define ASAN_UNPOISON_MEMORY_REGION(addr, size) \
 	((void)(addr), (void)(size))
 #endif
-
 
 #ifdef __cplusplus
 }

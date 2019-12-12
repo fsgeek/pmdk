@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2018, Intel Corporation
+ * Copyright 2015-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -44,7 +44,7 @@ extern "C" {
 #endif
 
 struct block_container {
-	struct block_container_ops *c_ops;
+	const struct block_container_ops *c_ops;
 	struct palloc_heap *heap;
 };
 
@@ -59,10 +59,6 @@ struct block_container_ops {
 	/* removes and returns the best-fit memory block for size */
 	int (*get_rm_bestfit)(struct block_container *c,
 		struct memory_block *m);
-
-	/* finds exact match memory block */
-	int (*get_exact)(struct block_container *c,
-		const struct memory_block *m);
 
 	/* checks whether the container is empty */
 	int (*is_empty)(struct block_container *c);

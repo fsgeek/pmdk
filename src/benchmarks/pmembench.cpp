@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2018, Intel Corporation
+ * Copyright 2015-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -89,7 +89,7 @@ struct pmembench {
  * struct benchmark -- benchmark's context
  */
 struct benchmark {
-	LIST_ENTRY(benchmark) next;
+	PMDK_LIST_ENTRY(benchmark) next;
 	struct benchmark_info *info;
 	void *priv;
 	struct benchmark_clo *clos;
@@ -101,7 +101,7 @@ struct benchmark {
  * struct bench_list -- list of available benchmarks
  */
 struct bench_list {
-	LIST_HEAD(benchmarks_head, benchmark) head;
+	PMDK_LIST_HEAD(benchmarks_head, benchmark) head;
 	bool initialized;
 };
 
@@ -320,17 +320,19 @@ pmembench_set_priv(struct benchmark *bench, void *priv)
 int
 pmembench_register(struct benchmark_info *bench_info)
 {
+	assert(bench_info->name && bench_info->brief);
+
 	struct benchmark *bench = (struct benchmark *)calloc(1, sizeof(*bench));
 	assert(bench != nullptr);
 
 	bench->info = bench_info;
 
 	if (!benchmarks.initialized) {
-		LIST_INIT(&benchmarks.head);
+		PMDK_LIST_INIT(&benchmarks.head);
 		benchmarks.initialized = true;
 	}
 
-	LIST_INSERT_HEAD(&benchmarks.head, bench, next);
+	PMDK_LIST_INSERT_HEAD(&benchmarks.head, bench, next);
 
 	return 0;
 }
@@ -1024,7 +1026,7 @@ pmembench_print_help()
 
 	printf("\nAvaliable benchmarks:\n");
 	struct benchmark *bench = nullptr;
-	LIST_FOREACH(bench, &benchmarks.head, next)
+	PMDK_LIST_FOREACH(bench, &benchmarks.head, next)
 	printf("\t%-20s\t\t%s\n", bench->info->name, bench->info->brief);
 	printf("\n$ pmembench <benchmark> --help to print detailed information"
 	       " about benchmark arguments\n");
@@ -1038,7 +1040,7 @@ static struct benchmark *
 pmembench_get_bench(const char *name)
 {
 	struct benchmark *bench;
-	LIST_FOREACH(bench, &benchmarks.head, next)
+	PMDK_LIST_FOREACH(bench, &benchmarks.head, next)
 	{
 		if (strcmp(name, bench->info->name) == 0)
 			return bench;
@@ -1163,8 +1165,9 @@ pmembench_single_repeat(struct benchmark *bench, struct benchmark_args *args,
 
 	if (bench->info->rm_file && !args->is_dynamic_poolset) {
 		ret = pmembench_remove_file(args->fname);
-		if (ret != 0) {
+		if (ret != 0 && errno != ENOENT) {
 			perror("removing file failed");
+
 			return ret;
 		}
 	}
@@ -1496,9 +1499,9 @@ out_release_clos:
  */
 static void __attribute__((destructor)) pmembench_free_benchmarks(void)
 {
-	while (!LIST_EMPTY(&benchmarks.head)) {
-		struct benchmark *bench = LIST_FIRST(&benchmarks.head);
-		LIST_REMOVE(bench, next);
+	while (!PMDK_LIST_EMPTY(&benchmarks.head)) {
+		struct benchmark *bench = PMDK_LIST_FIRST(&benchmarks.head);
+		PMDK_LIST_REMOVE(bench, next);
 		free(bench);
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -71,14 +71,38 @@ typedef struct pmemobjpool PMEMobjpool;
 /*
  * allocation functions flags
  */
-#define POBJ_FLAG_ZERO		(((uint64_t)1) << 0)
-#define POBJ_FLAG_NO_FLUSH	(((uint64_t)1) << 1)
+#define POBJ_FLAG_ZERO			(((uint64_t)1) << 0)
+#define POBJ_FLAG_NO_FLUSH		(((uint64_t)1) << 1)
+#define POBJ_FLAG_NO_SNAPSHOT		(((uint64_t)1) << 2)
+#define POBJ_FLAG_ASSUME_INITIALIZED	(((uint64_t)1) << 3)
+#define POBJ_FLAG_TX_NO_ABORT		(((uint64_t)1) << 4)
 
 #define POBJ_CLASS_ID(id)	(((uint64_t)(id)) << 48)
+#define POBJ_ARENA_ID(id)	(((uint64_t)(id)) << 32)
 
 #define POBJ_XALLOC_CLASS_MASK	((((uint64_t)1 << 16) - 1) << 48)
+#define POBJ_XALLOC_ARENA_MASK	((((uint64_t)1 << 16) - 1) << 32)
 #define POBJ_XALLOC_ZERO	POBJ_FLAG_ZERO
 #define POBJ_XALLOC_NO_FLUSH	POBJ_FLAG_NO_FLUSH
+#define POBJ_XALLOC_NO_ABORT	POBJ_FLAG_TX_NO_ABORT
+
+/*
+ * pmemobj_mem* flags
+ */
+#define PMEMOBJ_F_MEM_NODRAIN		(1U << 0)
+
+#define PMEMOBJ_F_MEM_NONTEMPORAL	(1U << 1)
+#define PMEMOBJ_F_MEM_TEMPORAL		(1U << 2)
+
+#define PMEMOBJ_F_MEM_WC		(1U << 3)
+#define PMEMOBJ_F_MEM_WB		(1U << 4)
+
+#define PMEMOBJ_F_MEM_NOFLUSH		(1U << 5)
+
+/*
+ * pmemobj_mem*, pmemobj_xflush & pmemobj_xpersist flags
+ */
+#define PMEMOBJ_F_RELAXED		(1U << 31)
 
 /*
  * Persistent memory object
@@ -272,7 +296,6 @@ const char *pmemobj_check_versionU(unsigned major_required,
 const wchar_t *pmemobj_check_versionW(unsigned major_required,
 	unsigned minor_required);
 #endif
-
 
 /*
  * Passing NULL to pmemobj_set_funcs() tells libpmemobj to continue to use the

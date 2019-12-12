@@ -43,7 +43,6 @@ date: pmemobj API version 2.3
 _WINUX(,[NOTES](#notes)<br />)
 [SEE ALSO](#see-also)<br />
 
-
 # NAME #
 
 **OID_IS_NULL**(), **OID_EQUALS**(),
@@ -51,7 +50,6 @@ _WINUX(,[NOTES](#notes)<br />)
 **pmemobj_type_num**(), **pmemobj_pool_by_oid**(),
 **pmemobj_pool_by_ptr**() - functions that allow mapping
 operations between object addresses, object handles, oids or type numbers
-
 
 # SYNOPSIS #
 
@@ -70,7 +68,6 @@ void *pmemobj_volatile(PMEMobjpool *pop, struct pmemvlt *vlt,
 	size_t size, void *ptr,
 	int (*constr)(void *ptr, void *arg), void *arg); (EXPERIMENTAL)
 ```
-
 
 # DESCRIPTION #
 
@@ -168,7 +165,7 @@ The **pmemobj_type_num**() function returns the type number of the object
 represented by *oid*.
 
 The **pmemobj_pool_by_oid**() function returns a handle to the pool that
-contains the object represented by *oid*. If the the pool is not open or
+contains the object represented by *oid*. If the pool is not open or
 *oid* is **OID_NULL**, **pmemobj_pool_by_oid**() returns NULL.
 
 The **pmemobj_pool_by_ptr**() function returns a handle to the pool that

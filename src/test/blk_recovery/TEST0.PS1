@@ -1,5 +1,5 @@
 #
-# Copyright 2014-2018, Intel Corporation
+# Copyright 2014-2019, Intel Corporation
 # Copyright (c) 2016, Microsoft Corporation. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -35,7 +35,6 @@
 # src\test\blk_recovery\TEST0 -- unit test for pmemblk recovery
 #
 
-# standard unit test setup
 . ..\unittest\unittest.ps1
 
 require_test_type medium
@@ -53,7 +52,11 @@ create_holey_file 2G $DIR\testfile1
 # Simple case, one write interrupted.  pmemblk_check() should note
 # that testfile1 is consistent (after recovery steps were taken).
 #
-expect_normal_exit $Env:EXE_DIR\blk_recovery$Env:EXESUFFIX 4096 $DIR\testfile1 5 10
+expect_abnormal_exit $Env:EXE_DIR\blk_recovery$Env:EXESUFFIX 4096 $DIR\testfile1 5 10
+mv out0.log interrupted0.log
+
+expect_normal_exit $Env:EXE_DIR\blk_recovery$Env:EXESUFFIX 4096 $DIR\testfile1
+mv out0.log check0.log
 
 check_pool $DIR\testfile1
 

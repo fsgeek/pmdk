@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2018, Intel Corporation
+ * Copyright 2015-2019, Intel Corporation
  * Copyright (c) 2016, Microsoft Corporation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -103,10 +103,11 @@ static void *Rpmem_handle_remote;
 int Prefault_at_open = 0;
 int Prefault_at_create = 0;
 int SDS_at_create = POOL_FEAT_INCOMPAT_DEFAULT & POOL_E_FEAT_SDS ? 1 : 0;
-
+int Fallocate_at_create = 1;
+int COW_at_open = 0;
 
 /* list of pool set option names and flags */
-static struct pool_set_option Options[] = {
+static const struct pool_set_option Options[] = {
 	{ "SINGLEHDR", OPTION_SINGLEHDR },
 #ifndef _WIN32
 	{ "NOHDRS", OPTION_NOHDRS },
@@ -386,7 +387,7 @@ util_map_hdr(struct pool_set_part *part, int flags, int rdonly)
 		/* this is required only for Device DAX & memcheck */
 		addr = util_map_hint(hdrsize, hdrsize);
 		if (addr == MAP_FAILED) {
-			ERR("cannot find a contiguous region of given size");
+			LOG(1, "cannot find a contiguous region of given size");
 			/* there's nothing we can do */
 			return -1;
 		}
@@ -1132,7 +1133,6 @@ util_replica_check_map_sync(struct pool_set *set, unsigned repidx,
 
 	int map_sync = rep->part[0].map_sync;
 
-
 	for (unsigned p = 1; p < rep->nparts; p++) {
 		if (map_sync != rep->part[p].map_sync) {
 			ERR("replica #%u part %u %smapped with MAP_SYNC",
@@ -1431,12 +1431,14 @@ util_poolset_directories_load(struct pool_set *set)
 	 */
 	struct pool_replica *rep;
 	struct pool_replica *mrep = set->replica[max_parts_rep];
+
 	for (unsigned r = 0; r < set->nreplicas; r++) {
 		if (set->replica[r]->nparts == mrep->nparts)
 			continue;
 
 		if (VEC_SIZE(&set->replica[r]->directory) == 0) {
-			ERR("no directories in replica");
+			errno = ENOENT;
+			ERR("!no directories in replica");
 			return -1;
 		}
 
@@ -1773,19 +1775,21 @@ util_poolset_single(const char *path, size_t filesize, int create,
  * util_part_open -- open or create a single part file
  */
 int
-util_part_open(struct pool_set_part *part, size_t minsize, int create)
+util_part_open(struct pool_set_part *part, size_t minsize, int create_part)
 {
-	LOG(3, "part %p minsize %zu create %d", part, minsize, create);
+	LOG(3, "part %p minsize %zu create %d", part, minsize, create_part);
 
 	int exists = util_file_exists(part->path);
 	if (exists < 0)
 		return -1;
 
+	int create_file = create_part;
+
 	if (exists)
-		create = 0;
+		create_file = 0;
 
 	part->created = 0;
-	if (create) {
+	if (create_file) {
 		part->fd = util_file_create(part->path, part->filesize,
 				minsize);
 		if (part->fd == -1) {
@@ -1800,6 +1804,17 @@ util_part_open(struct pool_set_part *part, size_t minsize, int create)
 		if (part->fd == -1) {
 			LOG(2, "failed to open file: %s", part->path);
 			return -1;
+		}
+
+		if (Fallocate_at_create && create_part && !part->is_dev_dax) {
+			int ret = os_posix_fallocate(part->fd, 0,
+					(os_off_t)size);
+			if (ret != 0) {
+				errno = ret;
+				ERR("!posix_fallocate \"%s\", %zu", part->path,
+					size);
+				return -1;
+			}
 		}
 
 		/* check if filesize matches */
@@ -2573,7 +2588,6 @@ util_header_check_remote(struct pool_set *set, unsigned partidx)
 		shutdown_state_set_dirty(&hdrp->sds, rep);
 	}
 
-
 	rep->part[partidx].rdonly = 0;
 
 	return 0;
@@ -2635,7 +2649,7 @@ util_replica_map_local(struct pool_set *set, unsigned repidx, int flags)
 		/* determine a hint address for mmap() */
 		addr = util_map_hint(rep->resvsize, 0);
 		if (addr == MAP_FAILED) {
-			ERR("cannot find a contiguous region of given size");
+			LOG(1, "cannot find a contiguous region of given size");
 			return -1;
 		}
 
@@ -3175,7 +3189,7 @@ util_pool_create_uuids(struct pool_set **setp, const char *path,
 							util_print_bad_files_cb,
 							NULL);
 			ERR(
-				"pool set contains bad blocks and cannot be created, run 'pmempool create --bad-blocks' utility to clear bad blocks and create a pool");
+				"pool set contains bad blocks and cannot be created, run 'pmempool create --clear-bad-blocks' utility to clear bad blocks and create a pool");
 			errno = EIO;
 			goto err_poolset_free;
 		}
@@ -3365,7 +3379,7 @@ util_replica_open_local(struct pool_set *set, unsigned repidx, int flags)
 		if (addr == NULL)
 			addr = util_map_hint(rep->resvsize, 0);
 		if (addr == MAP_FAILED) {
-			ERR("cannot find a contiguous region of given size");
+			LOG(1, "cannot find a contiguous region of given size");
 			return -1;
 		}
 
@@ -3756,10 +3770,16 @@ util_pool_open_nocheck(struct pool_set *set, unsigned flags)
 
 	if (flags & POOL_OPEN_CHECK_BAD_BLOCKS) {
 		/* check if any bad block recovery file exists */
-		if (badblocks_recovery_file_exists(set)) {
+		int bfe = badblocks_recovery_file_exists(set);
+		if (bfe > 0) {
 			ERR(
 				"error: a bad block recovery file exists, run 'pmempool sync --bad-blocks' utility to try to recover the pool");
 			errno = EINVAL;
+			return -1;
+		}
+		if (bfe < 0) {
+			LOG(1,
+				"an error occurred when checking whether recovery file exists.");
 			return -1;
 		}
 
@@ -3873,6 +3893,38 @@ util_read_compat_features(struct pool_set *set, uint32_t *compat_features)
 }
 
 /*
+ * unlink_remote_replicas -- removes remote replicas from poolset
+ *
+ * It is necessary when COW flag is set because remote replicas
+ * cannot be mapped privately
+ */
+static int
+unlink_remote_replicas(struct pool_set *set)
+{
+	unsigned i = 0;
+	while (i < set->nreplicas) {
+		if (set->replica[i]->remote == NULL) {
+			i++;
+			continue;
+		}
+
+		util_replica_close(set, i);
+		int ret = util_replica_close_remote(set->replica[i], i,
+				DO_NOT_DELETE_PARTS);
+		if (ret != 0)
+			return ret;
+
+		size_t size = sizeof(set->replica[i]) *
+			(set->nreplicas - i - 1);
+		memmove(&set->replica[i], &set->replica[i + 1], size);
+		set->nreplicas--;
+	}
+
+	set->remote = 0;
+	return 0;
+}
+
+/*
  * util_pool_open -- open a memory pool (set or a single file)
  *
  * This routine does all the work, but takes a rdonly flag so internal
@@ -3899,6 +3951,12 @@ util_pool_open(struct pool_set **setp, const char *path, size_t minpartsize,
 		return -1;
 	}
 
+	if ((*setp)->replica[0]->nparts == 0) {
+		errno = ENOENT;
+		ERR("!no parts in replicas");
+		goto err_poolset_free;
+	}
+
 	if (cow && (*setp)->replica[0]->part[0].is_dev_dax) {
 		ERR("device dax cannot be mapped privately");
 		errno = ENOTSUP;
@@ -3918,10 +3976,17 @@ util_pool_open(struct pool_set **setp, const char *path, size_t minpartsize,
 
 	if (compat_features & POOL_FEAT_CHECK_BAD_BLOCKS) {
 		/* check if any bad block recovery file exists */
-		if (badblocks_recovery_file_exists(set)) {
+		int bfe = badblocks_recovery_file_exists(set);
+		if (bfe > 0) {
 			ERR(
 				"error: a bad block recovery file exists, run 'pmempool sync --bad-blocks' utility to try to recover the pool");
 			errno = EINVAL;
+			goto err_poolset_free;
+		}
+
+		if (bfe < 0) {
+			LOG(1,
+				"an error occurred when checking whether recovery file exists.");
 			goto err_poolset_free;
 		}
 
@@ -3979,6 +4044,13 @@ util_pool_open(struct pool_set **setp, const char *path, size_t minpartsize,
 
 	/* unmap all headers */
 	util_unmap_all_hdrs(set);
+
+	/* remove all remote replicas from poolset when cow */
+	if (cow && set->remote) {
+		ret = unlink_remote_replicas(set);
+		if (ret != 0)
+			goto err_replica;
+	}
 
 	return 0;
 

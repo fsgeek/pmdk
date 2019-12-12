@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -50,10 +50,10 @@ struct ctl;
 struct ctl_index {
 	const char *name;
 	long value;
-	SLIST_ENTRY(ctl_index) entry;
+	PMDK_SLIST_ENTRY(ctl_index) entry;
 };
 
-SLIST_HEAD(ctl_indexes, ctl_index);
+PMDK_SLIST_HEAD(ctl_indexes, ctl_index);
 
 enum ctl_query_source {
 	CTL_UNKNOWN_QUERY_SOURCE,
@@ -109,7 +109,7 @@ struct ctl_argument {
 #define CTL_ARG_PARSER_END {0, 0, NULL}
 
 /*
- * CTL Tree node structure, do not use directly. All the necessery functionality
+ * CTL Tree node structure, do not use directly. All the necessary functionality
  * is provided by the included macros.
  */
 struct ctl_node {
@@ -117,9 +117,9 @@ struct ctl_node {
 	enum ctl_node_type type;
 
 	node_callback cb[MAX_CTL_QUERY_TYPE];
-	struct ctl_argument *arg;
+	const struct ctl_argument *arg;
 
-	struct ctl_node *children;
+	const struct ctl_node *children;
 };
 
 struct ctl *ctl_new(void);
@@ -157,30 +157,30 @@ int ctl_arg_string(const void *arg, void *dest, size_t dest_size);
 
 #define CTL_NODE_END {NULL, CTL_NODE_UNKNOWN, {NULL, NULL, NULL}, NULL, NULL}
 
-#define CTL_NODE(name)\
-ctl_node_##name
+#define CTL_NODE(name, ...)\
+ctl_node_##__VA_ARGS__##_##name
 
 int ctl_query(struct ctl *ctl, void *ctx, enum ctl_query_source source,
 		const char *name, enum ctl_query_type type, void *arg);
 
 /* Declaration of a new child node */
-#define CTL_CHILD(name)\
+#define CTL_CHILD(name, ...)\
 {CTL_STR(name), CTL_NODE_NAMED, {NULL, NULL, NULL}, NULL,\
-	(struct ctl_node *)CTL_NODE(name)}
+	(struct ctl_node *)CTL_NODE(name, __VA_ARGS__)}
 
 /* Declaration of a new indexed node */
-#define CTL_INDEXED(name)\
+#define CTL_INDEXED(name, ...)\
 {CTL_STR(name), CTL_NODE_INDEXED, {NULL, NULL, NULL}, NULL,\
-	(struct ctl_node *)CTL_NODE(name)}
+	(struct ctl_node *)CTL_NODE(name, __VA_ARGS__)}
 
-#define CTL_READ_HANDLER(name)\
-ctl_##name##_read
+#define CTL_READ_HANDLER(name, ...)\
+ctl_##__VA_ARGS__##_##name##_read
 
-#define CTL_WRITE_HANDLER(name)\
-ctl_##name##_write
+#define CTL_WRITE_HANDLER(name, ...)\
+ctl_##__VA_ARGS__##_##name##_write
 
-#define CTL_RUNNABLE_HANDLER(name)\
-ctl_##name##_runnable
+#define CTL_RUNNABLE_HANDLER(name, ...)\
+ctl_##__VA_ARGS__##_##name##_runnable
 
 #define CTL_ARG(name)\
 ctl_arg_##name
@@ -189,23 +189,26 @@ ctl_arg_##name
  * Declaration of a new read-only leaf. If used the corresponding read function
  * must be declared by CTL_READ_HANDLER macro.
  */
-#define CTL_LEAF_RO(name)\
-{CTL_STR(name), CTL_NODE_LEAF, {CTL_READ_HANDLER(name), NULL, NULL}, NULL, NULL}
+#define CTL_LEAF_RO(name, ...)\
+{CTL_STR(name), CTL_NODE_LEAF, \
+	{CTL_READ_HANDLER(name, __VA_ARGS__), NULL, NULL}, NULL, NULL}
 
 /*
  * Declaration of a new write-only leaf. If used the corresponding write
  * function must be declared by CTL_WRITE_HANDLER macro.
  */
-#define CTL_LEAF_WO(name)\
-{CTL_STR(name), CTL_NODE_LEAF, {NULL, CTL_WRITE_HANDLER(name), NULL},\
+#define CTL_LEAF_WO(name, ...)\
+{CTL_STR(name), CTL_NODE_LEAF, \
+	{NULL, CTL_WRITE_HANDLER(name, __VA_ARGS__), NULL},\
 	&CTL_ARG(name), NULL}
 
 /*
  * Declaration of a new runnable leaf. If used the corresponding run
  * function must be declared by CTL_RUNNABLE_HANDLER macro.
  */
-#define CTL_LEAF_RUNNABLE(name)\
-{CTL_STR(name), CTL_NODE_LEAF, {NULL, NULL, CTL_RUNNABLE_HANDLER(name)},\
+#define CTL_LEAF_RUNNABLE(name, ...)\
+{CTL_STR(name), CTL_NODE_LEAF, \
+	{NULL, NULL, CTL_RUNNABLE_HANDLER(name, __VA_ARGS__)},\
 	NULL, NULL}
 
 /*

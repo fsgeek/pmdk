@@ -68,12 +68,12 @@
     <ClCompile Include="..\..\common\ctl.c" />
     <ClCompile Include="..\..\common\ctl_prefault.c" />
     <ClCompile Include="..\..\common\ctl_sds.c" />
+    <ClCompile Include="..\..\common\ctl_fallocate.c" />
     <ClCompile Include="..\..\common\file.c" />
     <ClCompile Include="..\..\common\file_windows.c" />
     <ClCompile Include="..\..\common\fs_windows.c" />
     <ClCompile Include="..\..\common\mmap.c" />
     <ClCompile Include="..\..\common\mmap_windows.c" />
-    <ClCompile Include="..\..\common\os_auto_flush_windows.c" />
     <ClCompile Include="..\..\common\os_deep_windows.c" />
     <ClCompile Include="..\..\common\os_thread_windows.c" />
     <ClCompile Include="..\..\common\os_windows.c" />
@@ -90,7 +90,7 @@
     <ClCompile Include="..\..\libpmemobj\container_ravl.c" />
     <ClCompile Include="..\..\libpmemobj\container_seglists.c" />
     <ClCompile Include="..\..\libpmemobj\ctl_debug.c" />
-    <ClCompile Include="..\..\libpmemobj\cuckoo.c" />
+    <ClCompile Include="..\..\libpmemobj\critnib.c" />
     <ClCompile Include="..\..\libpmemobj\heap.c" />
     <ClCompile Include="..\..\libpmemobj\lane.c" />
     <ClCompile Include="..\..\libpmemobj\libpmemobj.c" />

@@ -7,7 +7,7 @@ header: PMDK
 date: pmemobj API version 2.3
 ...
 
-[comment]: <> (Copyright 2017, Intel Corporation)
+[comment]: <> (Copyright 2017-2018, Intel Corporation)
 
 [comment]: <> (Redistribution and use in source and binary forms, with or without)
 [comment]: <> (modification, are permitted provided that the following conditions)
@@ -43,13 +43,11 @@ date: pmemobj API version 2.3
 [CAVEATS](#caveats)<br />
 [SEE ALSO](#see-also)<br />
 
-
 # NAME #
 
 _UW(pmemobj_open), _UW(pmemobj_create),
 **pmemobj_close**(), _UW(pmemobj_check)
 - create, open, close and validate persistent memory transactional object store
-
 
 # SYNOPSIS #
 
@@ -65,7 +63,6 @@ _UWFUNCR1(int, pmemobj_check, *path, const char *layout)
 
 _UNICODE()
 
-
 # DESCRIPTION #
 
 To use the pmem-resident transactional object store provided by
@@ -73,8 +70,8 @@ To use the pmem-resident transactional object store provided by
 with the _UW(pmemobj_create) function described below. Existing pools
 may be opened with the _UW(pmemobj_open) function.
 
-None of the three functions described below is thread-safe with respect
-to any other **libpmemobj**(7) functions. In other words, when creating,
+None of the three functions described below are thread-safe with respect
+to any other **libpmemobj**(7) function. In other words, when creating,
 opening or deleting a pool, nothing else in the library can happen in parallel,
 and therefore these functions should be called from the main thread.
 
@@ -178,12 +175,10 @@ as described in the **DEBUGGING AND ERROR HANDLING** section in
 **libpmemobj**(7). _UW(pmemobj_check) returns -1 and sets *errno* if it cannot
 perform the consistency check due to other errors.
 
-
 # CAVEATS #
 
 Not all file systems support **posix_fallocate**(3). _UW(pmemobj_create) will
 fail if the underlying file system does not support **posix_fallocate**(3).
-
 
 # SEE ALSO #
 

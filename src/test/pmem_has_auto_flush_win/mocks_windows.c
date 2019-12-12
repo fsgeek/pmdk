@@ -1,5 +1,5 @@
 /*
- * Copyright 2018, Intel Corporation
+ * Copyright 2018-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,16 +31,15 @@
  */
 
 /*
- * mocks_windows.c -- mocked functions used in os_auto_flush_windows.c
+ * mocks_windows.c -- mocked functions used in auto_flush_windows.c
  */
 
-#include "pmem.h"
 #include "util.h"
 #include "unittest.h"
 
 #include "set.h"
 #include "pmemcommon.h"
-#include "os_auto_flush_windows.h"
+#include "auto_flush_windows.h"
 #include "pmem_has_auto_flush_win.h"
 #include <errno.h>
 
@@ -101,14 +100,3 @@ FUNC_MOCK_RUN_DEFAULT {
 	return BufferSize;
 }
 FUNC_MOCK_END
-
-/*
- * libpmem_init -- load-time initialization for libpmem
- * Called automatically by the run-time loader.
- */
-CONSTRUCTOR(libpmem_init)
-void
-libpmem_init(void)
-{
-	pmem_init();
-}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -45,6 +45,7 @@
 #include "os.h"
 #include "os_thread.h"
 #include "util.h"
+#include "rpmem.h"
 #include "rpmem_common.h"
 #include "rpmem_util.h"
 #include "rpmem_obc.h"
@@ -65,6 +66,8 @@ if (Rpmem_fork_unsafe) {\
 }\
 } while (0)
 
+static os_once_t Rpmem_fork_unsafe_key_once = OS_ONCE_INIT;
+
 /*
  * rpmem_pool -- remote pool context
  */
@@ -74,6 +77,7 @@ struct rpmem_pool {
 	struct rpmem_target_info *info;
 	char fip_service[NI_MAXSERV];
 	enum rpmem_provider provider;
+	size_t max_wq_size;		/* max WQ size supported by provider */
 	os_thread_t monitor;
 	int closing;
 	int no_headers;
@@ -119,19 +123,19 @@ err:
 }
 
 /*
- * rpmem_get_provider -- returns provider based on node address and environment
+ * rpmem_get_provider -- set provider based on node address and environment
  */
-static enum rpmem_provider
-rpmem_get_provider(const char *node)
+static int
+rpmem_set_provider(RPMEMpool *rpp, const char *node)
 {
-	LOG(3, "node %s", node);
+	LOG(3, "rpp %p, node %s", rpp, node);
 
 	struct rpmem_fip_probe probe;
 	enum rpmem_provider prov = RPMEM_PROV_UNKNOWN;
 
 	int ret = rpmem_fip_probe_get(node, &probe);
 	if (ret)
-		return prov;
+		return -1;
 
 	/*
 	 * The sockets provider can be used only if specified environment
@@ -158,8 +162,14 @@ rpmem_get_provider(const char *node)
 			prov = RPMEM_PROV_LIBFABRIC_VERBS;
 	}
 
-	return prov;
+	if (prov == RPMEM_PROV_UNKNOWN)
+		return -1;
 
+	RPMEM_ASSERT(prov < MAX_RPMEM_PROV);
+	rpp->max_wq_size = probe.max_wq_size[prov];
+	rpp->provider = prov;
+
+	return 0;
 }
 
 /*
@@ -203,8 +213,8 @@ rpmem_common_init(const char *target)
 		goto err_target_split;
 	}
 
-	rpp->provider = rpmem_get_provider(rpp->info->node);
-	if (rpp->provider == RPMEM_PROV_UNKNOWN) {
+	ret = rpmem_set_provider(rpp, rpp->info->node);
+	if (ret) {
 		errno = ENOMEDIUM;
 		ERR("cannot find provider");
 		goto err_provider;
@@ -285,6 +295,7 @@ rpmem_common_fip_init(RPMEMpool *rpp, struct rpmem_req_attr *req,
 
 	struct rpmem_fip_attr fip_attr = {
 		.provider	= req->provider,
+		.max_wq_size	= rpp->max_wq_size,
 		.persist_method	= resp->persist_method,
 		.laddr		= pool_addr,
 		.size		= pool_size,
@@ -447,6 +458,7 @@ rpmem_create(const char *target, const char *pool_set_name,
 			"nlanes %p, create_attr %p", target, pool_set_name,
 			pool_addr, pool_size, nlanes, create_attr);
 
+	os_once(&Rpmem_fork_unsafe_key_once, &rpmem_fip_probe_fork_safety);
 	RPMEM_CHECK_FORK();
 
 	rpmem_log_args("create", target, pool_set_name,
@@ -523,6 +535,7 @@ rpmem_open(const char *target, const char *pool_set_name,
 			"nlanes %p, create_attr %p", target, pool_set_name,
 			pool_addr, pool_size, nlanes, open_attr);
 
+	os_once(&Rpmem_fork_unsafe_key_once, &rpmem_fip_probe_fork_safety);
 	RPMEM_CHECK_FORK();
 
 	rpmem_log_args("open", target, pool_set_name,
@@ -607,6 +620,93 @@ rpmem_close(RPMEMpool *rpp)
 }
 
 /*
+ * rpmem_flush -- flush to target node operation
+ *
+ * rpp           -- remote pool handle
+ * offset        -- offset in pool
+ * length        -- length of flush operation
+ * lane          -- lane number
+ * flags         -- additional flags
+ */
+int
+rpmem_flush(RPMEMpool *rpp, size_t offset, size_t length,
+	unsigned lane, unsigned flags)
+{
+	LOG(3, "rpp %p, offset %zu, length %zu, lane %d, flags 0x%x",
+			rpp, offset, length, lane, flags);
+
+	if (unlikely(rpp->error)) {
+		errno = rpp->error;
+		return -1;
+	}
+
+	if (flags & RPMEM_FLUSH_FLAGS_MASK) {
+		ERR("invalid flags (0x%x)", flags);
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (rpp->no_headers == 0 && offset < RPMEM_HDR_SIZE) {
+		ERR("offset (%zu) in pool is less than %d bytes", offset,
+				RPMEM_HDR_SIZE);
+		errno = EINVAL;
+		return -1;
+	}
+
+	/*
+	 * By default use RDMA SEND flush mode which has atomicity
+	 * guarantees. For relaxed flush use RDMA WRITE.
+	 */
+	unsigned mode = RPMEM_PERSIST_SEND;
+	if (flags & RPMEM_FLUSH_RELAXED)
+		mode = RPMEM_FLUSH_WRITE;
+
+	int ret = rpmem_fip_flush(rpp->fip, offset, length, lane, mode);
+	if (unlikely(ret)) {
+		LOG(2, "flush operation failed");
+		rpp->error = ret;
+		errno = rpp->error;
+		return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * rpmem_drain -- drain on target node operation
+ *
+ * rpp           -- remote pool handle
+ * lane          -- lane number
+ * flags         -- additional flags
+ */
+int
+rpmem_drain(RPMEMpool *rpp, unsigned lane, unsigned flags)
+{
+	LOG(3, "rpp %p, lane %d, flags 0x%x", rpp, lane, flags);
+
+	if (unlikely(rpp->error)) {
+		errno = rpp->error;
+		return -1;
+	}
+
+	if (flags != 0) {
+		ERR("invalid flags (0x%x)", flags);
+		errno = EINVAL;
+		return -1;
+	}
+
+	int ret = rpmem_fip_drain(rpp->fip, lane);
+	if (unlikely(ret)) {
+		LOG(2, "drain operation failed");
+		rpp->error = ret;
+		errno = rpp->error;
+		return -1;
+	}
+
+	return 0;
+}
+
+/*
  * rpmem_persist -- persist operation on target node
  *
  * rpp           -- remote pool handle
@@ -626,7 +726,7 @@ rpmem_persist(RPMEMpool *rpp, size_t offset, size_t length,
 		return -1;
 	}
 
-	if (flags & RPMEM_FLAGS_MASK) {
+	if (flags & RPMEM_PERSIST_FLAGS_MASK) {
 		ERR("invalid flags (0x%x)", flags);
 		errno = EINVAL;
 		return -1;
@@ -645,12 +745,12 @@ rpmem_persist(RPMEMpool *rpp, size_t offset, size_t length,
 	 */
 	unsigned mode = RPMEM_PERSIST_SEND;
 	if (flags & RPMEM_PERSIST_RELAXED)
-		mode = RPMEM_PERSIST_WRITE;
+		mode = RPMEM_FLUSH_WRITE;
 
 	int ret = rpmem_fip_persist(rpp->fip, offset, length,
 			lane, mode);
 	if (unlikely(ret)) {
-		ERR("persist operation failed");
+		LOG(2, "persist operation failed");
 		rpp->error = ret;
 		errno = rpp->error;
 		return -1;
@@ -810,7 +910,7 @@ rpmem_remove(const char *target, const char *pool_set, int flags)
 
 	ret = rpmem_ssh_close(ssh);
 	if (ret) {
-		errno = EINVAL;
+		errno = ret;
 		ERR("remote command failed");
 		goto err_ssh_close;
 	}
@@ -826,3 +926,18 @@ err_ssh_exec:
 err_target:
 	return -1;
 }
+
+#if FAULT_INJECTION
+void
+rpmem_inject_fault_at(enum pmem_allocation_type type, int nth,
+						const char *at)
+{
+	return common_inject_fault_at(type, nth, at);
+}
+
+int
+rpmem_fault_injection_enabled(void)
+{
+	return common_fault_injection_enabled();
+}
+#endif

@@ -13,16 +13,18 @@
   <ItemGroup>
     <ClCompile Include="..\..\src\libpmemlog\log.c" />
     <ClCompile Include="..\..\src\libpmemlog\libpmemlog.c" />
+    <ClCompile Include="..\common\alloc.c" />
     <ClCompile Include="..\common\badblock.c" />
     <ClCompile Include="..\common\ctl.c" />
+    <ClCompile Include="..\common\ctl_cow.c" />
     <ClCompile Include="..\common\ctl_prefault.c" />
     <ClCompile Include="..\common\ctl_sds.c" />
+    <ClCompile Include="..\common\ctl_fallocate.c" />
     <ClCompile Include="..\common\file.c" />
     <ClCompile Include="..\common\file_windows.c" />
     <ClCompile Include="..\common\mmap.c" />
     <ClCompile Include="..\common\mmap_windows.c" />
     <ClCompile Include="..\common\fs_windows.c" />
-    <ClCompile Include="..\common\os_auto_flush_windows.c" />
     <ClCompile Include="..\common\badblock_none.c" />
     <ClCompile Include="..\common\os_deep_windows.c" />
     <ClCompile Include="..\common\os_dimm_windows.c" />
@@ -36,7 +38,12 @@
     <ClCompile Include="..\common\util_windows.c" />
     <ClCompile Include="..\common\uuid.c" />
     <ClCompile Include="..\common\uuid_windows.c" />
+    <ClCompile Include="..\libpmem2\auto_flush_windows.c" />
     <ClCompile Include="libpmemlog_main.c" />
+    <ClCompile Include="..\libpmem2\config.c" />
+    <ClCompile Include="..\libpmem2\config_windows.c" />
+    <ClCompile Include="..\libpmem2\pmem2_utils.c" />
+    <ClCompile Include="..\libpmem2\pmem2_utils_other.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\src\common\out.h" />
@@ -44,14 +51,15 @@
     <ClInclude Include="..\..\src\common\valgrind_internal.h" />
     <ClInclude Include="..\..\src\include\libpmemlog.h" />
     <ClInclude Include="..\..\src\libpmemlog\log.h" />
+    <ClInclude Include="..\common\alloc.h" />
     <ClInclude Include="..\common\ctl.h" />
     <ClInclude Include="..\common\ctl_global.h" />
     <ClInclude Include="..\common\dlsym.h" />
+    <ClInclude Include="..\common\fault_injection.h" />
     <ClInclude Include="..\common\file.h" />
     <ClInclude Include="..\common\fs.h" />
     <ClInclude Include="..\common\mmap.h" />
     <ClInclude Include="..\common\os.h" />
-    <ClInclude Include="..\common\os_auto_flush.h" />
     <ClInclude Include="..\common\os_deep.h" />
     <ClInclude Include="..\common\os_thread.h" />
     <ClInclude Include="..\common\pmemcommon.h" />
@@ -59,6 +67,10 @@
     <ClInclude Include="..\common\set.h" />
     <ClInclude Include="..\common\sys_util.h" />
     <ClInclude Include="..\common\uuid.h" />
+    <ClInclude Include="..\libpmem2\auto_flush.h" />
+    <ClInclude Include="..\libpmem2\auto_flush_windows.h" />
+    <ClInclude Include="..\libpmem2\config.h" />
+    <ClInclude Include="..\libpmem2\pmem2_utils.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="libpmemlog.def" />

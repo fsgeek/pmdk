@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -47,10 +47,14 @@
 #include "sync.h"
 #include "stats.h"
 #include "ctl_debug.h"
+#include "page_size.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include "alloc.h"
+#include "fault_injection.h"
 
 #define PMEMOBJ_LOG_PREFIX "libpmemobj"
 #define PMEMOBJ_LOG_LEVEL_VAR "PMEMOBJ_LOG_LEVEL"
@@ -58,22 +62,22 @@ extern "C" {
 
 /* attributes of the obj memory pool format for the pool header */
 #define OBJ_HDR_SIG "PMEMOBJ"	/* must be 8 bytes including '\0' */
-#define OBJ_FORMAT_MAJOR 5
+#define OBJ_FORMAT_MAJOR 6
 
 #define OBJ_FORMAT_FEAT_DEFAULT \
-	{0x0000, POOL_FEAT_INCOMPAT_DEFAULT, 0x0000}
+	{POOL_FEAT_COMPAT_DEFAULT, POOL_FEAT_INCOMPAT_DEFAULT, 0x0000}
 
 #define OBJ_FORMAT_FEAT_CHECK \
-	{0x0000, POOL_FEAT_INCOMPAT_VALID, 0x0000}
+	{POOL_FEAT_COMPAT_VALID, POOL_FEAT_INCOMPAT_VALID, 0x0000}
 
 static const features_t obj_format_feat_default = OBJ_FORMAT_FEAT_CHECK;
 
-/* size of the persistent part of PMEMOBJ pool descriptor (2kB) */
+/* size of the persistent part of PMEMOBJ pool descriptor */
 #define OBJ_DSC_P_SIZE		2048
 /* size of unused part of the persistent part of PMEMOBJ pool descriptor */
 #define OBJ_DSC_P_UNUSED	(OBJ_DSC_P_SIZE - PMEMOBJ_MAX_LAYOUT - 40)
 
-#define OBJ_LANES_OFFSET	8192	/* lanes offset (8kB) */
+#define OBJ_LANES_OFFSET	(sizeof(struct pmemobjpool)) /* lanes offset */
 #define OBJ_NLANES		1024	/* number of lanes */
 
 #define OBJ_OFF_TO_PTR(pop, off) ((void *)((uintptr_t)(pop) + (off)))
@@ -118,6 +122,12 @@ typedef int (*persist_remote_fn)(PMEMobjpool *pop, const void *addr,
 typedef uint64_t type_num_t;
 
 #define CONVERSION_FLAG_OLD_SET_CACHE ((1ULL) << 0)
+
+/* PMEM_OBJ_POOL_HEAD_SIZE Without the unused and unused2 arrays */
+#define PMEM_OBJ_POOL_HEAD_SIZE 2188
+#define PMEM_OBJ_POOL_UNUSED2_SIZE (PMEM_PAGESIZE \
+					- OBJ_DSC_P_UNUSED\
+					- PMEM_OBJ_POOL_HEAD_SIZE)
 
 struct pmemobjpool {
 	struct pool_hdr hdr;	/* memory pool header */
@@ -201,9 +211,15 @@ struct pmemobjpool {
 	PMEMrwlock_internal *rwlock_head;
 	PMEMcond_internal *cond_head;
 
+	struct {
+		struct ravl *map;
+		os_mutex_t lock;
+		int verify;
+	} ulog_user_buffers;
+
 	/* padding to align size of this structure to page boundary */
 	/* sizeof(unused2) == 8192 - offsetof(struct pmemobjpool, unused2) */
-	char unused2[992];
+	char unused2[PMEM_OBJ_POOL_UNUSED2_SIZE];
 };
 
 /*
@@ -215,6 +231,9 @@ struct pmemobjpool {
 
 #define CLASS_ID_FROM_FLAG(flag)\
 ((uint16_t)((flag) >> 48))
+
+#define ARENA_ID_FROM_FLAG(flag)\
+((uint16_t)((flag) >> 32))
 
 /*
  * pmemobj_get_uuid_lo -- (internal) evaluates XOR sum of least significant
@@ -266,6 +285,28 @@ int obj_read_remote(void *ctx, uintptr_t base, void *dest, void *addr,
 	_pobj_debug_notice(__func__, NULL, 0)
 #else
 #define _POBJ_DEBUG_NOTICE_IN_TX() do {} while (0)
+#endif
+
+#if FAULT_INJECTION
+void
+pmemobj_inject_fault_at(enum pmem_allocation_type type, int nth,
+							const char *at);
+
+int
+pmemobj_fault_injection_enabled(void);
+#else
+static inline void
+pmemobj_inject_fault_at(enum pmem_allocation_type type, int nth,
+						const char *at)
+{
+	abort();
+}
+
+static inline int
+pmemobj_fault_injection_enabled(void)
+{
+	return 0;
+}
 #endif
 
 #ifdef __cplusplus

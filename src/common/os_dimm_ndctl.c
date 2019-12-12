@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018, Intel Corporation
+ * Copyright 2017-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -41,12 +41,12 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/sysmacros.h>
+#include <fcntl.h>
 #include <ndctl/libndctl.h>
 #include <ndctl/libdaxctl.h>
-/* XXX: workaround for missing PAGE_SIZE - should be fixed in linux/ndctl.h */
-#include <sys/user.h>
-#include <linux/ndctl.h>
 
+#include "file.h"
 #include "out.h"
 #include "os.h"
 #include "os_dimm.h"
@@ -54,27 +54,18 @@
 #include "badblock.h"
 #include "vec.h"
 
-/*
- * http://pmem.io/documents/NVDIMM_DSM_Interface-V1.6.pdf
- * Table 3-2 SMART amd Health Data - Validity flags
- * Bit[5] – If set to 1, indicates that Unsafe Shutdown Count
- * field is valid
- */
-#define USC_VALID_FLAG (1 << 5)
-
 #define FOREACH_BUS_REGION_NAMESPACE(ctx, bus, region, ndns)	\
 	ndctl_bus_foreach(ctx, bus)				\
 		ndctl_region_foreach(bus, region)		\
 			ndctl_namespace_foreach(region, ndns)	\
 
-
 /*
- * os_dimm_match_device -- (internal) returns 1 if the device matches
+ * os_dimm_match_devdax -- (internal) returns 1 if the devdax matches
  *                         with the given file, 0 if it doesn't match,
  *                         and -1 in case of error.
  */
 static int
-os_dimm_match_device(const os_stat_t *st, const char *devname)
+os_dimm_match_devdax(const os_stat_t *st, const char *devname)
 {
 	LOG(3, "st %p devname %s", st, devname);
 
@@ -94,8 +85,76 @@ os_dimm_match_device(const os_stat_t *st, const char *devname)
 		return -1;
 	}
 
-	dev_t dev = S_ISCHR(st->st_mode) ? st->st_rdev : st->st_dev;
-	if (dev == stat.st_rdev) {
+	if (st->st_rdev == stat.st_rdev) {
+		LOG(4, "found matching device: %s", path);
+		return 1;
+	}
+
+	LOG(10, "skipping not matching device: %s", path);
+	return 0;
+}
+
+#define BUFF_LENGTH 64
+
+/*
+ * os_dimm_match_fsdax -- (internal) returns 1 if the device matches
+ *                         with the given file, 0 if it doesn't match,
+ *                         and -1 in case of error.
+ */
+static int
+os_dimm_match_fsdax(const os_stat_t *st, const char *devname)
+{
+	LOG(3, "st %p devname %s", st, devname);
+
+	if (*devname == '\0')
+		return 0;
+
+	char path[PATH_MAX];
+	char dev_id[BUFF_LENGTH];
+	int ret;
+
+	ret = snprintf(path, PATH_MAX, "/sys/block/%s/dev", devname);
+	if (ret < 0) {
+		ERR("snprintf: %d", ret);
+		return -1;
+	}
+
+	ret = snprintf(dev_id, BUFF_LENGTH, "%d:%d",
+			major(st->st_dev), minor(st->st_dev));
+	if (ret < 0) {
+		ERR("snprintf: %d", ret);
+		return -1;
+	}
+
+	int fd = os_open(path, O_RDONLY);
+	if (fd < 0) {
+		ERR("!open \"%s\"", path);
+		return -1;
+	}
+
+	char buff[BUFF_LENGTH];
+	ssize_t nread = read(fd, buff, BUFF_LENGTH);
+	if (nread < 0) {
+		ERR("!read");
+		os_close(fd);
+		return -1;
+	}
+
+	os_close(fd);
+
+	if (nread == 0) {
+		ERR("%s is empty", path);
+		return -1;
+	}
+
+	if (buff[nread - 1] != '\n') {
+		ERR("%s doesn't end with new line", path);
+		return -1;
+	}
+
+	buff[nread - 1] = '\0';
+
+	if (strcmp(buff, dev_id) == 0) {
 		LOG(4, "found matching device: %s", path);
 		return 1;
 	}
@@ -127,6 +186,10 @@ os_dimm_region_namespace(struct ndctl_ctx *ctx, const os_stat_t *st,
 	if (pndns)
 		*pndns = NULL;
 
+	enum file_type type = util_stat_get_type(st);
+	if (type == OTHER_ERROR)
+		return -1;
+
 	FOREACH_BUS_REGION_NAMESPACE(ctx, bus, region, ndns) {
 		struct ndctl_btt *btt;
 		struct ndctl_dax *dax = NULL;
@@ -134,6 +197,10 @@ os_dimm_region_namespace(struct ndctl_ctx *ctx, const os_stat_t *st,
 		const char *devname;
 
 		if ((dax = ndctl_namespace_get_dax(ndns))) {
+			if (type == TYPE_NORMAL)
+				continue;
+			ASSERTeq(type, TYPE_DEVDAX);
+
 			struct daxctl_region *dax_region;
 			dax_region = ndctl_dax_get_daxctl_region(dax);
 			if (!dax_region) {
@@ -143,7 +210,7 @@ os_dimm_region_namespace(struct ndctl_ctx *ctx, const os_stat_t *st,
 			struct daxctl_dev *dev;
 			daxctl_dev_foreach(dax_region, dev) {
 				devname = daxctl_dev_get_devname(dev);
-				int ret = os_dimm_match_device(st, devname);
+				int ret = os_dimm_match_devdax(st, devname);
 				if (ret < 0)
 					return ret;
 
@@ -157,6 +224,10 @@ os_dimm_region_namespace(struct ndctl_ctx *ctx, const os_stat_t *st,
 			}
 
 		} else {
+			if (type == TYPE_DEVDAX)
+				continue;
+			ASSERTeq(type, TYPE_NORMAL);
+
 			if ((btt = ndctl_namespace_get_btt(ndns))) {
 				devname = ndctl_btt_get_block_device(btt);
 			} else if ((pfn = ndctl_namespace_get_pfn(ndns))) {
@@ -166,7 +237,7 @@ os_dimm_region_namespace(struct ndctl_ctx *ctx, const os_stat_t *st,
 					ndctl_namespace_get_block_device(ndns);
 			}
 
-			int ret = os_dimm_match_device(st, devname);
+			int ret = os_dimm_match_fsdax(st, devname);
 			if (ret < 0)
 				return ret;
 
@@ -257,6 +328,16 @@ end:
 	return ret;
 }
 
+static long long
+os_dimm_usc_dimm(struct ndctl_dimm *dimm)
+{
+	long long ret = ndctl_dimm_get_dirty_shutdown(dimm);
+	if (ret < 0)
+		ERR(
+			"Cannot read unsafe shutdown count. For more information please check https://github.com/pmem/issues/issues/1039");
+	return ret;
+}
+
 /*
  * os_dimm_usc -- returns unsafe shutdown count
  */
@@ -289,23 +370,10 @@ os_dimm_usc(const char *path, uint64_t *usc)
 	struct ndctl_dimm *dimm;
 
 	ndctl_dimm_foreach_in_interleave_set(iset, dimm) {
-		struct ndctl_cmd *cmd = ndctl_dimm_cmd_new_smart(dimm);
-
-		if (cmd == NULL) {
-			ERR("!ndctl_dimm_cmd_new_smart");
+		long long dimm_usc = os_dimm_usc_dimm(dimm);
+		if (dimm_usc < 0)
 			goto err;
-		}
-
-		if (ndctl_cmd_submit(cmd)) {
-			ERR("!ndctl_cmd_submit");
-			goto err;
-		}
-
-		if (!(ndctl_cmd_smart_get_flags(cmd) & USC_VALID_FLAG)) {
-			/* dimm doesn't support unsafe shutdown count */
-			continue;
-		}
-		*usc += ndctl_cmd_smart_get_shutdown_count(cmd);
+		*usc += (unsigned long long)dimm_usc;
 	}
 out:
 	ret = 0;
@@ -394,11 +462,15 @@ os_dimm_get_namespace_bounds(struct ndctl_region *region,
 }
 
 /*
- * os_dimm_namespace_get_badblocks -- (internal) returns bad blocks
- *                                    in the given namespace
+ * os_dimm_namespace_get_badblocks_by_region -- (internal) returns bad blocks
+ *                                    in the given namespace using the
+ *                                    universal region interface.
+ *
+ * This function works for all types of namespaces, but requires read access to
+ * privileged device information.
  */
 static int
-os_dimm_namespace_get_badblocks(struct ndctl_region *region,
+os_dimm_namespace_get_badblocks_by_region(struct ndctl_region *region,
 				struct ndctl_namespace *ndns,
 				struct badblocks *bbs)
 {
@@ -475,6 +547,61 @@ os_dimm_namespace_get_badblocks(struct ndctl_region *region,
 	LOG(4, "number of bad blocks detected: %u", bbs->bb_cnt);
 
 	return 0;
+}
+
+/*
+ * os_dimm_namespace_get_badblocks_by_namespace -- (internal) returns bad blocks
+ *                                    in the given namespace using the
+ *                                    block device badblocks interface.
+ *
+ * This function works only for fsdax, but does not require any special
+ * permissions.
+ */
+static int
+os_dimm_namespace_get_badblocks_by_namespace(struct ndctl_namespace *ndns,
+					struct badblocks *bbs)
+{
+	ASSERTeq(ndctl_namespace_get_mode(ndns), NDCTL_NS_MODE_FSDAX);
+
+	VEC(bbsvec, struct bad_block) bbv = VEC_INITIALIZER;
+	struct badblock *bb;
+	ndctl_namespace_badblock_foreach(ndns, bb) {
+		struct bad_block bbn;
+		bbn.offset = SEC2B(bb->offset);
+		bbn.length = (unsigned)SEC2B(bb->len);
+		bbn.nhealthy = NO_HEALTHY_REPLICA; /* unknown healthy replica */
+		if (VEC_PUSH_BACK(&bbv, bbn)) {
+			VEC_DELETE(&bbv);
+			return -1;
+		}
+	}
+
+	bbs->bb_cnt = (unsigned)VEC_SIZE(&bbv);
+	bbs->bbv = VEC_ARR(&bbv);
+	bbs->ns_resource = 0;
+
+	return 0;
+}
+
+/*
+ * os_dimm_namespace_get_badblocks -- (internal) returns bad blocks in the given
+ *                                    namespace, using the least privileged
+ *                                    path.
+ */
+static int
+os_dimm_namespace_get_badblocks(struct ndctl_region *region,
+				struct ndctl_namespace *ndns,
+				struct badblocks *bbs)
+{
+	/*
+	 * Only the new NDCTL versions have the namespace badblock iterator,
+	 * when compiled with older versions, the library needs to rely on the
+	 * old region interface.
+	 */
+	if (ndctl_namespace_get_mode(ndns) == NDCTL_NS_MODE_FSDAX)
+		return os_dimm_namespace_get_badblocks_by_namespace(ndns, bbs);
+
+	return os_dimm_namespace_get_badblocks_by_region(region, ndns, bbs);
 }
 
 /*
@@ -608,37 +735,11 @@ os_dimm_devdax_clear_one_badblock(struct ndctl_bus *bus,
 		goto out_ars_cap;
 	}
 
-	struct ndctl_cmd *cmd_ars_start =
-		ndctl_bus_cmd_new_ars_start(cmd_ars_cap, ND_ARS_PERSISTENT);
-	if (cmd_ars_start == NULL) {
-		ERR("ndctl_bus_cmd_new_ars_start() failed");
+	struct ndctl_range range;
+	if (ndctl_cmd_ars_cap_get_range(cmd_ars_cap, &range)) {
+		ERR("failed to get ars_cap range\n");
 		goto out_ars_cap;
 	}
-
-	if ((ret = ndctl_cmd_submit(cmd_ars_start)) < 0) {
-		ERR("failed to submit cmd (bus '%s')",
-			ndctl_bus_get_provider(bus));
-		goto out_ars_start;
-	}
-
-	struct ndctl_cmd *cmd_ars_status;
-	do {
-		cmd_ars_status = ndctl_bus_cmd_new_ars_status(cmd_ars_cap);
-		if (cmd_ars_status == NULL) {
-			ERR("ndctl_bus_cmd_new_ars_status() failed");
-			goto out_ars_start;
-		}
-
-		if ((ret = ndctl_cmd_submit(cmd_ars_status)) < 0) {
-			ERR("failed to submit cmd (bus '%s')",
-				ndctl_bus_get_provider(bus));
-			goto out_ars_status;
-		}
-
-	} while (ndctl_cmd_ars_in_progress(cmd_ars_status));
-
-	struct ndctl_range range;
-	ndctl_cmd_ars_cap_get_range(cmd_ars_cap, &range);
 
 	struct ndctl_cmd *cmd_clear_error = ndctl_bus_cmd_new_clear_error(
 		range.address, range.length, cmd_ars_cap);
@@ -657,10 +758,6 @@ os_dimm_devdax_clear_one_badblock(struct ndctl_bus *bus,
 
 out_clear_error:
 	ndctl_cmd_unref(cmd_clear_error);
-out_ars_status:
-	ndctl_cmd_unref(cmd_ars_status);
-out_ars_start:
-	ndctl_cmd_unref(cmd_ars_start);
 out_ars_cap:
 	ndctl_cmd_unref(cmd_ars_cap);
 

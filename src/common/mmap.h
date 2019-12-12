@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -58,11 +58,9 @@ extern char *Mmap_mapfile;
 
 void *util_map_sync(void *addr, size_t len, int proto, int flags, int fd,
 	os_off_t offset, int *map_sync);
-void *util_map(int fd, size_t len, int flags, int rdonly,
+void *util_map(int fd, os_off_t off, size_t len, int flags, int rdonly,
 		size_t req_align, int *map_sync);
 int util_unmap(void *addr, size_t len);
-
-void *util_map_tmpfile(const char *dir, size_t size, size_t req_align);
 
 #ifdef __FreeBSD__
 #define MAP_NORESERVE 0
@@ -110,7 +108,7 @@ enum pmem_map_type {
  * this structure tracks the file mappings outstanding per file handle
  */
 struct map_tracker {
-	SORTEDQ_ENTRY(map_tracker) entry;
+	PMDK_SORTEDQ_ENTRY(map_tracker) entry;
 	uintptr_t base_addr;
 	uintptr_t end_addr;
 	int region_id;

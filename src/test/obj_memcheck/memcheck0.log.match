@@ -32,7 +32,9 @@ $(OPT)==$(N)==    $(S) 0x$(X): main $(*)
 ==$(N)==    at 0x$(X): pmem_msync $(*)
 $(OPT)==$(N)==    by 0x$(X): ${obj_msync_nofail|???} $(*)
 $(OPT)==$(N)==    by 0x$(X): ${obj_norep_persist|???} $(*)
+$(OPT)==$(N)==    by 0x$(X): UnknownInlinedFun $(*)
 $(OPT)==$(N)==    by 0x$(X): ${pmemops_xpersist|???} $(*)
+$(OPT)==$(N)==    by 0x$(X): UnknownInlinedFun $(*)
 $(OPT)==$(N)==    by 0x$(X): ${pmemops_persist|???} $(*)
 $(OPT)==$(N)==    by 0x$(X): pmemobj_persist $(*)
 ==$(N)==    by 0x$(X): test_everything (obj_memcheck.c:$(N))
@@ -129,6 +131,5 @@ $(OPT)==$(N)==      possibly lost: 0 bytes in 0 blocks
 $(OPT)==$(N)==    still reachable: 0 bytes in 0 blocks
 $(OPT)==$(N)==         suppressed: $(NC) bytes in $(N) blocks
 ==$(N)== 
-==$(N)== For counts of detected and suppressed errors, rerun with: -v
 ==$(N)== Use --track-origins=yes to see where uninitialised values come from
 ==$(N)== ERROR SUMMARY: 10 errors from 8 contexts (suppressed: $(N) from $(N))

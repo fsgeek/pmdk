@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2018, Intel Corporation
+ * Copyright 2015-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -37,7 +37,7 @@
 #ifndef PMDK_VALGRIND_INTERNAL_H
 #define PMDK_VALGRIND_INTERNAL_H 1
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__FreeBSD__)
 #ifndef VALGRIND_ENABLED
 #define VALGRIND_ENABLED 1
 #endif
@@ -110,6 +110,12 @@ extern unsigned _On_valgrind;
 	ANNOTATE_IGNORE_WRITES_END();\
 } while (0)
 
+/* Supported by both helgrind and drd. */
+#define VALGRIND_HG_DRD_DISABLE_CHECKING(addr, size) do {\
+	if (On_valgrind) \
+		VALGRIND_HG_DISABLE_CHECKING((addr), (size));\
+} while (0)
+
 #else
 
 #define VALGRIND_ANNOTATE_HAPPENS_BEFORE(obj) do { (void)(obj); } while (0)
@@ -128,6 +134,11 @@ extern unsigned _On_valgrind;
 #define VALGRIND_ANNOTATE_IGNORE_WRITES_BEGIN() do {} while (0)
 
 #define VALGRIND_ANNOTATE_IGNORE_WRITES_END() do {} while (0)
+
+#define VALGRIND_HG_DRD_DISABLE_CHECKING(addr, size) do {\
+	(void) (addr);\
+	(void) (size);\
+} while (0)
 
 #endif
 
@@ -192,26 +203,6 @@ extern int _Pmreorder_emit;
 #define VALGRIND_WRITE_STATS do {\
 	if (On_valgrind)\
 		VALGRIND_PMC_WRITE_STATS;\
-} while (0)
-
-#define VALGRIND_LOG_STORES do {\
-	if (On_valgrind)\
-		VALGRIND_PMC_LOG_STORES;\
-} while (0)
-
-#define VALGRIND_NO_LOG_STORES do {\
-	if (On_valgrind)\
-		VALGRIND_PMC_NO_LOG_STORES;\
-} while (0)
-
-#define VALGRIND_ADD_LOG_REGION(addr, len) do {\
-	if (On_valgrind)\
-		VALGRIND_PMC_ADD_LOG_REGION((addr), (len));\
-} while (0)
-
-#define VALGRIND_REMOVE_LOG_REGION(addr, len) do {\
-	if (On_valgrind)\ \
-		VALGRIND_PMC_REMOVE_LOG_REGION((addr), (len));\
 } while (0)
 
 #define VALGRIND_EMIT_LOG(emit_log) do {\
@@ -328,20 +319,6 @@ extern int _Pmreorder_emit;
 } while (0)
 
 #define VALGRIND_WRITE_STATS do {} while (0)
-
-#define VALGRIND_LOG_STORES do {} while (0)
-
-#define VALGRIND_NO_LOG_STORES do {} while (0)
-
-#define VALGRIND_ADD_LOG_REGION(addr, len) do {\
-	(void) (addr);\
-	(void) (len);\
-} while (0)
-
-#define VALGRIND_REMOVE_LOG_REGION(addr, len) do {\
-	(void) (addr);\
-	(void) (len);\
-} while (0)
 
 #define VALGRIND_EMIT_LOG(emit_log) do {\
 	(void) (emit_log);\

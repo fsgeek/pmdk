@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  * Copyright (c) 2015-2017, Microsoft Corporation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -141,7 +141,7 @@ main(int argc, char *argv[])
 	chunk_length = Mmap_align;
 
 	/*
-	 * We dont' support too small a file size.
+	 * We don't support too small a file size.
 	 */
 	UT_ASSERT(Size / 8 > chunk_length);
 
@@ -208,7 +208,7 @@ main(int argc, char *argv[])
 		mt->Offset = offset;
 
 		AcquireSRWLockExclusive(&FileMappingQLock);
-		SORTEDQ_INSERT(&FileMappingQHead, mt, ListEntry,
+		PMDK_SORTEDQ_INSERT(&FileMappingQHead, mt, ListEntry,
 			FILE_MAPPING_TRACKER,
 			mmap_file_mapping_comparer);
 		ReleaseSRWLockExclusive(&FileMappingQLock);
@@ -236,7 +236,6 @@ main(int argc, char *argv[])
 
 	DONE(NULL);
 }
-
 
 /*
  * Since libpmem is linked statically, we need to invoke its ctor/dtor.

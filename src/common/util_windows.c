@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2017, Intel Corporation
+ * Copyright 2015-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,9 +34,12 @@
  * util_windows.c -- misc utilities with OS-specific implementation
  */
 
-#include <string.h>
-#include <tchar.h>
 #include <errno.h>
+#include <string.h>
+#include <stdio.h>
+#include <tchar.h>
+
+#include "alloc.h"
 #include "util.h"
 #include "out.h"
 #include "file.h"
@@ -72,6 +75,35 @@ util_strerror(int errnum, char *buff, size_t bufflen)
 		if (strerror_s(buff, bufflen, errnum))
 			strcpy_s(buff, bufflen, UNMAPPED_STR);
 	}
+}
+
+/*
+ * util_strwinerror -- return string describing windows error codes
+ */
+void
+util_strwinerror(unsigned long err, char *buff, size_t bufflen)
+{
+	wchar_t *error_str;
+
+	if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+			FORMAT_MESSAGE_FROM_SYSTEM |
+			FORMAT_MESSAGE_IGNORE_INSERTS,
+			NULL,
+			err,
+			0,
+			(LPWSTR)&error_str,
+			0, NULL) == 0) {
+		sprintf_s(buff, bufflen, "GetLastError() ==  %lu", err);
+		return;
+	}
+
+	if (util_toUTF8_buff(error_str, buff, bufflen)) {
+		LocalFree(error_str);
+		sprintf_s(buff, bufflen, "GetLastError() ==  %lu", err);
+		return;
+	}
+
+	LocalFree(error_str);
 }
 
 /*
@@ -251,4 +283,58 @@ util_getexecname(char *path, size_t pathlen)
 		path[cc] = '\0';
 
 	return path;
+}
+
+/*
+ * util_suppress_errmsg -- suppresses "abort" window on Windows if env variable
+ * is set, useful for automatic tests
+ */
+void
+util_suppress_errmsg(void)
+{
+	if (os_getenv("PMDK_NO_ABORT_MSG") != NULL) {
+		DWORD err = GetErrorMode();
+		SetErrorMode(err | SEM_NOGPFAULTERRORBOX |
+			SEM_FAILCRITICALERRORS);
+		_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+	}
+}
+
+static int Lasterror_to_errno[16000] = {
+	[ERROR_ACCESS_DENIED] = EACCES,
+	[ERROR_FILE_NOT_FOUND] = ENOENT,
+	[ERROR_INVALID_ACCESS] = EACCES,
+	[ERROR_INVALID_ADDRESS] = EINVAL,
+	[ERROR_INVALID_FUNCTION] = EINVAL,
+	[ERROR_INVALID_HANDLE] = EINVAL,
+	[ERROR_INVALID_PARAMETER] = EINVAL,
+	[ERROR_LOCK_FAILED] = EACCES,
+	[ERROR_MAPPED_ALIGNMENT] = EINVAL,
+	[ERROR_NOT_ENOUGH_MEMORY] = ENOMEM,
+	[ERROR_NOT_SUPPORTED] = ENOTSUP,
+	[ERROR_OUTOFMEMORY] = ENOMEM,
+	[ERROR_PATH_NOT_FOUND] = ENOENT,
+	[ERROR_TOO_MANY_OPEN_FILES] = EMFILE,
+};
+
+/*
+ * util_lasterror_to_errno - converts windows error codes to errno
+ */
+int
+util_lasterror_to_errno(unsigned long err)
+{
+	if (err >= ARRAY_SIZE(Lasterror_to_errno))
+		return -1;
+
+	/* no error */
+	if (err == 0)
+		return 0;
+
+	int ret = Lasterror_to_errno[err];
+
+	/* 0 is used to signalize missing entry in Lasterror_to_errno array */
+	if (ret == 0)
+		return -1;
+
+	return ret;
 }

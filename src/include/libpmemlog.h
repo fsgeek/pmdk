@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -37,11 +37,13 @@
  *
  * libpmemlog provides support for pmem-resident log files.
  *
- * See libpmemlog(3) for details.
+ * See libpmemlog(7) for details.
  */
 
 #ifndef LIBPMEMLOG_H
 #define LIBPMEMLOG_H 1
+
+#include <sys/types.h>
 
 #ifdef _WIN32
 #include <pmemcompat.h>
@@ -73,8 +75,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <sys/types.h>
 
 /*
  * opaque type, internal to libpmemlog

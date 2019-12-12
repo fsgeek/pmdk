@@ -65,19 +65,40 @@
     <ClCompile Include="os_deep_windows.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="os_auto_flush_windows.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="os_dimm_windows.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ctl.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ctl_cow.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="ctl_prefault.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ctl_fallocate.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="ctl_sds.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="alloc.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\libpmem2\config.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\libpmem2\config_windows.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\libpmem2\pmem2_utils.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\libpmem2\pmem2_utils_other.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\libpmem2\auto_flush_windows.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -104,12 +125,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="os.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="os_auto_flush.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="os_auto_flush_windows.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="os_badblock.h">
@@ -143,6 +158,24 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="valgrind_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="alloc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="fault_injection.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\libpmem2\config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\libpmem2\pmem2_utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\libpmem2\auto_flush.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\libpmem2\auto_flush_windows.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

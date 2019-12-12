@@ -13,7 +13,6 @@ testconfig.sh.example provides more detail.  The script RUNTESTS, when run with
 no arguments, will run all unit tests through all the combinations of fs-types
 and build-types, running the "check" level test.
 
-
 DETAILS ON HOW TO RUN UNIT TESTS
 
 See the top-level README for instructions on building, installing, running
@@ -124,19 +123,12 @@ unit test framework also looks for several other variables:
 
 	TRACE is not supported for tests which are executed on remote nodes.
 
-	Override the LD_LIBRARY_PATH provided by the unit test framework.  This
-	is useful for running a test against another source tree or against the
-	libraries installed on the system:
-
-		$ TEST_LD_LIBRARY_PATH=/usr/lib ./TEST0
-
 	Run test under Valgrind/memcheck:
 
 		$ MEMCHECK=force-enable ./TEST0
 
 	Display test run times:
 		$ TM=1 ./TEST0
-
 
 DETAILS ON HOW TO WRITE UNIT TESTS
 
@@ -204,7 +196,6 @@ produce:
 	out0.log	log of stdout
 	trace0.log	trace points from unittest library
 	pmem0.log	trace from libpmem (PMEM_LOG_FILE points here)
-	vmem0.log	trace from libvmem (VMEM_LOG_FILE points here)
 
 Although the above log files are the common case, the TEST* scripts are free to
 create any files.  It is recommended, however, that the script creates files

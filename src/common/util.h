@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  * Copyright (c) 2016, Microsoft Corporation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -57,12 +57,19 @@ extern "C" {
 extern unsigned long long Pagesize;
 extern unsigned long long Mmap_align;
 
+#if defined(__x86_64) || defined(_M_X64) || defined(__aarch64__)
 #define CACHELINE_SIZE 64ULL
+#elif defined(__PPC64__)
+#define CACHELINE_SIZE 128ULL
+#else
+#error unable to recognize architecture at compile time
+#endif
 
 #define PAGE_ALIGNED_DOWN_SIZE(size) ((size) & ~(Pagesize - 1))
 #define PAGE_ALIGNED_UP_SIZE(size)\
 	PAGE_ALIGNED_DOWN_SIZE((size) + (Pagesize - 1))
 #define IS_PAGE_ALIGNED(size) (((size) & (Pagesize - 1)) == 0)
+#define IS_MMAP_ALIGNED(size) (((size) & (Mmap_align - 1)) == 0)
 #define PAGE_ALIGN_UP(addr) ((void *)PAGE_ALIGNED_UP_SIZE((uintptr_t)(addr)))
 
 #define ALIGN_UP(size, align) (((size) + (align) - 1) & ~((align) - 1))
@@ -73,22 +80,10 @@ extern unsigned long long Mmap_align;
 #define util_alignof(t) offsetof(struct {char _util_c; t _util_m; }, _util_m)
 #define FORMAT_PRINTF(a, b) __attribute__((__format__(__printf__, (a), (b))))
 
-/*
- * overridable names for malloc & friends used by this library
- */
-typedef void *(*Malloc_func)(size_t size);
-typedef void (*Free_func)(void *ptr);
-typedef void *(*Realloc_func)(void *ptr, size_t size);
-typedef char *(*Strdup_func)(const char *s);
-
-extern Malloc_func Malloc;
-extern Free_func Free;
-extern Realloc_func Realloc;
-extern Strdup_func Strdup;
-extern void *Zalloc(size_t sz);
-
 void util_init(void);
 int util_is_zeroed(const void *addr, size_t len);
+uint64_t util_checksum_compute(void *addr, size_t len, uint64_t *csump,
+		size_t skip_off);
 int util_checksum(void *addr, size_t len, uint64_t *csump,
 		int insert, size_t skip_off);
 uint64_t util_checksum_seq(const void *addr, size_t len, uint64_t csum);
@@ -111,10 +106,13 @@ void util_free_UTF8(char *str);
 void util_free_UTF16(wchar_t *str);
 int util_toUTF16_buff(const char *in, wchar_t *out, size_t out_size);
 int util_toUTF8_buff(const wchar_t *in, char *out, size_t out_size);
+void util_suppress_errmsg(void);
+int util_lasterror_to_errno(unsigned long err);
 #endif
 
 #define UTIL_MAX_ERR_MSG 128
 void util_strerror(int errnum, char *buff, size_t bufflen);
+void util_strwinerror(unsigned long err, char *buff, size_t bufflen);
 
 void util_set_alloc_funcs(
 		void *(*malloc_func)(size_t size),
@@ -135,6 +133,16 @@ void util_set_alloc_funcs(
 #else
 #define force_inline __attribute__((always_inline)) inline
 #define NORETURN __attribute__((noreturn))
+#endif
+
+#ifdef _MSC_VER
+typedef UNALIGNED uint64_t ua_uint64_t;
+typedef UNALIGNED uint32_t ua_uint32_t;
+typedef UNALIGNED uint16_t ua_uint16_t;
+#else
+typedef uint64_t ua_uint64_t __attribute__((aligned(1)));
+typedef uint32_t ua_uint32_t __attribute__((aligned(1)));
+typedef uint16_t ua_uint16_t __attribute__((aligned(1)));
 #endif
 
 #define util_get_not_masked_bits(x, mask) ((x) & ~(mask))
@@ -291,7 +299,7 @@ typedef enum {
  * from the volatile value itself is expected to be atomic.
  *
  * The actual isnterface here:
- * #include <util.h>
+ * #include "util.h"
  * void util_atomic_load32(volatile A *object, A *destination);
  * void util_atomic_load64(volatile A *object, A *destination);
  * void util_atomic_load_explicit32(volatile A *object, A *destination,
@@ -322,7 +330,6 @@ typedef enum {
 		    order == memory_order_acquire)\
 		_ReadWriteBarrier();\
 	} while (0)
-
 
 #define util_atomic_load_explicit32 util_atomic_load_explicit
 #define util_atomic_load_explicit64 util_atomic_load_explicit
@@ -445,14 +452,14 @@ util_mssb_index64(long long value)
 
 /* ISO C11 -- 7.17.7 Operations on atomic types */
 #define util_atomic_load32(object, dest)\
-	util_atomic_load_explicit32(object, dest, memory_order_seqcst)
+	util_atomic_load_explicit32(object, dest, memory_order_seq_cst)
 #define util_atomic_load64(object, dest)\
-	util_atomic_load_explicit64(object, dest, memory_order_seqcst)
+	util_atomic_load_explicit64(object, dest, memory_order_seq_cst)
 
 #define util_atomic_store32(object, desired)\
-	util_atomic_store_explicit32(object, desired, memory_order_seqcst)
+	util_atomic_store_explicit32(object, desired, memory_order_seq_cst)
 #define util_atomic_store64(object, desired)\
-	util_atomic_store_explicit64(object, desired, memory_order_seqcst)
+	util_atomic_store_explicit64(object, desired, memory_order_seq_cst)
 
 /*
  * util_get_printable_ascii -- convert non-printable ascii to dot '.'

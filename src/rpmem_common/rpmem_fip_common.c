@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2017, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -139,6 +139,7 @@ rpmem_fip_probe_get(const char *target, struct rpmem_fip_probe *probe)
 			}
 
 			probe->providers |= (1U << p);
+			probe->max_wq_size[p] = prov->tx_attr->size;
 			prov = prov->next;
 		}
 	}
@@ -241,7 +242,8 @@ struct rpmem_fip_lane_attr {
 	size_t n_per_cq; /* number of entries per lane in completion queue */
 };
 
-static struct rpmem_fip_lane_attr
+/* queues size required by remote persist operation methods */
+static const struct rpmem_fip_lane_attr
 rpmem_fip_lane_attrs[MAX_RPMEM_FIP_NODE][MAX_RPMEM_PM] = {
 	[RPMEM_FIP_NODE_CLIENT][RPMEM_PM_GPSPM] = {
 		.n_per_sq = 2, /* WRITE + SEND */
@@ -276,26 +278,28 @@ rpmem_fip_cq_size(enum rpmem_persist_method pm, enum rpmem_fip_node node)
 	RPMEMC_ASSERT(pm < MAX_RPMEM_PM);
 	RPMEMC_ASSERT(node < MAX_RPMEM_FIP_NODE);
 
-	struct rpmem_fip_lane_attr *attr = &rpmem_fip_lane_attrs[node][pm];
+	const struct rpmem_fip_lane_attr *attr =
+			&rpmem_fip_lane_attrs[node][pm];
 	return attr->n_per_cq ? : 1;
 }
 
 /*
- * rpmem_fip_tx_size -- returns submission queue (transmit queue) size based
+ * rpmem_fip_wq_size -- returns submission queue (transmit queue) size based
  * on persist method and node type
  */
 size_t
-rpmem_fip_tx_size(enum rpmem_persist_method pm, enum rpmem_fip_node node)
+rpmem_fip_wq_size(enum rpmem_persist_method pm, enum rpmem_fip_node node)
 {
 	RPMEMC_ASSERT(pm < MAX_RPMEM_PM);
 	RPMEMC_ASSERT(node < MAX_RPMEM_FIP_NODE);
 
-	struct rpmem_fip_lane_attr *attr = &rpmem_fip_lane_attrs[node][pm];
+	const struct rpmem_fip_lane_attr *attr =
+			&rpmem_fip_lane_attrs[node][pm];
 	return attr->n_per_sq ? : 1;
 }
 
 /*
- * rpmem_fip_tx_size -- returns receive queue size based
+ * rpmem_fip_rx_size -- returns receive queue size based
  * on persist method and node type
  */
 size_t
@@ -304,7 +308,8 @@ rpmem_fip_rx_size(enum rpmem_persist_method pm, enum rpmem_fip_node node)
 	RPMEMC_ASSERT(pm < MAX_RPMEM_PM);
 	RPMEMC_ASSERT(node < MAX_RPMEM_FIP_NODE);
 
-	struct rpmem_fip_lane_attr *attr = &rpmem_fip_lane_attrs[node][pm];
+	const struct rpmem_fip_lane_attr *attr =
+			&rpmem_fip_lane_attrs[node][pm];
 	return attr->n_per_rq ? : 1;
 }
 

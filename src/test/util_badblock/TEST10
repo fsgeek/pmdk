@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright 2018, Intel Corporation
+# Copyright 2018-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -37,7 +37,6 @@
 #                                   on a pmem filesystem
 #
 
-# standard unit test setup
 . ../unittest/unittest.sh
 
 require_test_type medium
@@ -57,10 +56,11 @@ setup
 $FALLOCATE 100M $DIR/testfile1
 
 ENV="\
-LD_LIBRARY_PATH=${TEST_LD_LIBRARY_PATH} \
+LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
 UNITTEST_NUM=${UNITTEST_NUM} \
 UNITTEST_NAME=${UNITTEST_NAME} \
-UNITTEST_LOG_LEVEL=${UNITTEST_LOG_LEVEL}"
+UNITTEST_LOG_LEVEL=${UNITTEST_LOG_LEVEL} \
+UNITTEST_CHECK_OPEN_FILES_IGNORE_BADBLOCKS=${UNITTEST_CHECK_OPEN_FILES_IGNORE_BADBLOCKS}"
 
 expect_normal_exit sudo bash -c \"${ENV} \
 	./util_badblock$EXESUFFIX $DIR/testfile1 l \"

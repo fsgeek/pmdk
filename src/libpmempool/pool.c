@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -345,7 +345,8 @@ pool_params_parse(const PMEMpoolcheck *ppc, struct pool_params *params,
 		}
 		params->size = (size_t)s;
 		int map_sync;
-		addr = util_map(fd, params->size, MAP_SHARED, 1, 0, &map_sync);
+		addr = util_map(fd, 0, params->size, MAP_SHARED, 1, 0,
+			&map_sync);
 		if (addr == NULL) {
 			ret = -1;
 			goto out_close;
@@ -505,7 +506,7 @@ pool_data_alloc(PMEMpoolcheck *ppc)
 		return NULL;
 	}
 
-	TAILQ_INIT(&pool->arenas);
+	PMDK_TAILQ_INIT(&pool->arenas);
 	pool->uuid_op = UUID_NOP;
 
 	if (pool_params_parse(ppc, &pool->params, 0))
@@ -581,14 +582,14 @@ pool_data_free(struct pool_data *pool)
 		pool_set_file_close(pool->set_file);
 	}
 
-	while (!TAILQ_EMPTY(&pool->arenas)) {
-		struct arena *arenap = TAILQ_FIRST(&pool->arenas);
+	while (!PMDK_TAILQ_EMPTY(&pool->arenas)) {
+		struct arena *arenap = PMDK_TAILQ_FIRST(&pool->arenas);
 		if (arenap->map)
 			free(arenap->map);
 		if (arenap->flog)
 			free(arenap->flog);
 
-		TAILQ_REMOVE(&pool->arenas, arenap, next);
+		PMDK_TAILQ_REMOVE(&pool->arenas, arenap, next);
 		free(arenap);
 	}
 
@@ -1077,7 +1078,7 @@ pool_get_first_valid_btt(struct pool_data *pool, struct btt_info *infop,
 {
 	/* if we have valid arena get BTT Info header from it */
 	if (pool->narenas != 0) {
-		struct arena *arenap = TAILQ_FIRST(&pool->arenas);
+		struct arena *arenap = PMDK_TAILQ_FIRST(&pool->arenas);
 		memcpy(infop, &arenap->btt_info, sizeof(*infop));
 		return arenap->offset;
 	}
@@ -1134,3 +1135,18 @@ pool_get_min_size(enum pool_type type)
 		return SIZE_MAX;
 	}
 }
+
+#if FAULT_INJECTION
+void
+pmempool_inject_fault_at(enum pmem_allocation_type type, int nth,
+							const char *at)
+{
+	common_inject_fault_at(type, nth, at);
+}
+
+int
+pmempool_fault_injection_enabled(void)
+{
+	return common_fault_injection_enabled();
+}
+#endif

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -75,7 +75,7 @@ pmem_map_register(int fd, size_t len, const char *path, int is_dev_dax)
 
 	void *addr;
 	int map_sync;
-	addr = util_map(fd, len, MAP_SHARED, 0, 0, &map_sync);
+	addr = util_map(fd, 0, len, MAP_SHARED, 0, 0, &map_sync);
 	if (!addr)
 		return NULL;
 
@@ -102,7 +102,9 @@ err_unmap:
  * pmem_os_init -- os-dependent part of pmem initialization
  */
 void
-pmem_os_init(void)
+pmem_os_init(is_pmem_func *func)
 {
 	LOG(3, NULL);
+
+	*func = is_pmem_detect;
 }

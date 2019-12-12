@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -47,13 +47,14 @@
 #include "mmap.h"
 #include "sys_util.h"
 #include "os.h"
+#include "alloc.h"
 
 int Mmap_no_random;
 void *Mmap_hint;
 static os_rwlock_t Mmap_list_lock;
 
-static SORTEDQ_HEAD(map_list_head, map_tracker) Mmap_list =
-		SORTEDQ_HEAD_INITIALIZER(Mmap_list);
+static PMDK_SORTEDQ_HEAD(map_list_head, map_tracker) Mmap_list =
+		PMDK_SORTEDQ_HEAD_INITIALIZER(Mmap_list);
 
 /*
  * util_mmap_init -- initialize the mmap utils
@@ -109,8 +110,8 @@ util_mmap_fini(void)
  * appropriate arguments and includes our trace points.
  */
 void *
-util_map(int fd, size_t len, int flags, int rdonly, size_t req_align,
-	int *map_sync)
+util_map(int fd, os_off_t off, size_t len, int flags, int rdonly,
+	size_t req_align, int *map_sync)
 {
 	LOG(3, "fd %d len %zu flags %d rdonly %d req_align %zu map_sync %p",
 			fd, len, flags, rdonly, req_align, map_sync);
@@ -118,7 +119,7 @@ util_map(int fd, size_t len, int flags, int rdonly, size_t req_align,
 	void *base;
 	void *addr = util_map_hint(len, req_align);
 	if (addr == MAP_FAILED) {
-		ERR("cannot find a contiguous region of given size");
+		LOG(1, "cannot find a contiguous region of given size");
 		return NULL;
 	}
 
@@ -126,7 +127,7 @@ util_map(int fd, size_t len, int flags, int rdonly, size_t req_align,
 		ASSERTeq((uintptr_t)addr % req_align, 0);
 
 	int proto = rdonly ? PROT_READ : PROT_READ|PROT_WRITE;
-	base = util_map_sync(addr, len, proto, flags, fd, 0, map_sync);
+	base = util_map_sync(addr, len, proto, flags, fd, off, map_sync);
 	if (base == MAP_FAILED) {
 		ERR("!mmap %zu bytes", len);
 		return NULL;
@@ -163,51 +164,6 @@ util_unmap(void *addr, size_t len)
 		ERR("!munmap");
 
 	return retval;
-}
-
-/*
- * util_map_tmpfile -- reserve space in an unlinked file and memory-map it
- *
- * size must be multiple of page size.
- */
-void *
-util_map_tmpfile(const char *dir, size_t size, size_t req_align)
-{
-	int oerrno;
-
-	if (((os_off_t)size) < 0) {
-		ERR("invalid size (%zu) for os_off_t", size);
-		errno = EFBIG;
-		return NULL;
-	}
-
-	int fd = util_tmpfile(dir, OS_DIR_SEP_STR "vmem.XXXXXX", O_EXCL);
-	if (fd == -1) {
-		LOG(2, "cannot create temporary file in dir %s", dir);
-		goto err;
-	}
-
-	if ((errno = os_posix_fallocate(fd, 0, (os_off_t)size)) != 0) {
-		ERR("!posix_fallocate");
-		goto err;
-	}
-
-	void *base;
-	if ((base = util_map(fd, size, MAP_SHARED,
-			0, req_align, NULL)) == NULL) {
-		LOG(2, "cannot mmap temporary file");
-		goto err;
-	}
-
-	(void) os_close(fd);
-	return base;
-
-err:
-	oerrno = errno;
-	if (fd != -1)
-		(void) os_close(fd);
-	errno = oerrno;
-	return NULL;
 }
 
 /*
@@ -323,7 +279,7 @@ util_range_find_unlocked(uintptr_t addr, size_t len)
 
 	struct map_tracker *mt;
 
-	SORTEDQ_FOREACH(mt, &Mmap_list, entry) {
+	PMDK_SORTEDQ_FOREACH(mt, &Mmap_list, entry) {
 		if (addr < mt->end_addr &&
 		    (addr >= mt->base_addr || end > mt->base_addr))
 			goto out;
@@ -388,7 +344,7 @@ util_range_register(const void *addr, size_t len, const char *path,
 
 	util_rwlock_wrlock(&Mmap_list_lock);
 
-	SORTEDQ_INSERT(&Mmap_list, mt, entry, struct map_tracker,
+	PMDK_SORTEDQ_INSERT(&Mmap_list, mt, entry, struct map_tracker,
 			util_range_comparer);
 
 	util_rwlock_unlock(&Mmap_list_lock);
@@ -457,15 +413,15 @@ util_range_split(struct map_tracker *mt, const void *addrp, const void *endp)
 		mte->type = mt->type;
 	}
 
-	SORTEDQ_REMOVE(&Mmap_list, mt, entry);
+	PMDK_SORTEDQ_REMOVE(&Mmap_list, mt, entry);
 
 	if (mtb) {
-		SORTEDQ_INSERT(&Mmap_list, mtb, entry,
+		PMDK_SORTEDQ_INSERT(&Mmap_list, mtb, entry,
 				struct map_tracker, util_range_comparer);
 	}
 
 	if (mte) {
-		SORTEDQ_INSERT(&Mmap_list, mte, entry,
+		PMDK_SORTEDQ_INSERT(&Mmap_list, mte, entry,
 				struct map_tracker, util_range_comparer);
 	}
 

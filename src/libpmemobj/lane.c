@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2018, Intel Corporation
+ * Copyright 2015-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -44,7 +44,7 @@
 #include <sched.h>
 
 #include "libpmemobj.h"
-#include "cuckoo.h"
+#include "critnib.h"
 #include "lane.h"
 #include "out.h"
 #include "util.h"
@@ -57,7 +57,7 @@
 
 static os_tls_key_t Lane_info_key;
 
-static __thread struct cuckoo *Lane_info_ht;
+static __thread struct critnib *Lane_info_ht;
 static __thread struct lane_info *Lane_info_records;
 static __thread struct lane_info *Lane_info_cache;
 
@@ -67,9 +67,9 @@ static __thread struct lane_info *Lane_info_cache;
 static inline void
 lane_info_create(void)
 {
-	Lane_info_ht = cuckoo_new();
+	Lane_info_ht = critnib_new();
 	if (Lane_info_ht == NULL)
-		FATAL("cuckoo_new");
+		FATAL("critnib_new");
 }
 
 /*
@@ -81,7 +81,7 @@ lane_info_delete(void)
 	if (unlikely(Lane_info_ht == NULL))
 		return;
 
-	cuckoo_delete(Lane_info_ht);
+	critnib_delete(Lane_info_ht);
 	struct lane_info *record;
 	struct lane_info *head = Lane_info_records;
 	while (head != NULL) {
@@ -151,7 +151,7 @@ lane_info_cleanup(PMEMobjpool *pop)
 	if (unlikely(Lane_info_ht == NULL))
 		return;
 
-	struct lane_info *info = cuckoo_remove(Lane_info_ht, pop->uuid_lo);
+	struct lane_info *info = critnib_remove(Lane_info_ht, pop->uuid_lo);
 	if (likely(info != NULL)) {
 		if (info->prev)
 			info->prev->next = info->next;
@@ -191,7 +191,9 @@ lane_ulog_constructor(void *base, void *ptr, size_t usable_size, void *arg)
 	size_t capacity = ALIGN_DOWN(usable_size - sizeof(struct ulog),
 		CACHELINE_SIZE);
 
-	ulog_construct(OBJ_PTR_TO_OFF(base, ptr), capacity, 1, p_ops);
+	uint64_t gen_num = *(uint64_t *)arg;
+	ulog_construct(OBJ_PTR_TO_OFF(base, ptr), capacity,
+			gen_num, 1, 0, p_ops);
 
 	return 0;
 }
@@ -200,13 +202,13 @@ lane_ulog_constructor(void *base, void *ptr, size_t usable_size, void *arg)
  * lane_undo_extend -- allocates a new undo log
  */
 static int
-lane_undo_extend(void *base, uint64_t *redo)
+lane_undo_extend(void *base, uint64_t *redo, uint64_t gen_num)
 {
 	PMEMobjpool *pop = base;
 	struct tx_parameters *params = pop->tx_params;
 	size_t s = SIZEOF_ALIGNED_ULOG(params->cache_size);
 
-	return pmalloc_construct(base, redo, s, lane_ulog_constructor, NULL,
+	return pmalloc_construct(base, redo, s, lane_ulog_constructor, &gen_num,
 		0, OBJ_INTERNAL_OBJECT_MASK, 0);
 }
 
@@ -214,11 +216,11 @@ lane_undo_extend(void *base, uint64_t *redo)
  * lane_redo_extend -- allocates a new redo log
  */
 static int
-lane_redo_extend(void *base, uint64_t *redo)
+lane_redo_extend(void *base, uint64_t *redo, uint64_t gen_num)
 {
 	size_t s = SIZEOF_ALIGNED_ULOG(LANE_REDO_EXTERNAL_SIZE);
 
-	return pmalloc_construct(base, redo, s, lane_ulog_constructor, NULL,
+	return pmalloc_construct(base, redo, s, lane_ulog_constructor, &gen_num,
 		0, OBJ_INTERNAL_OBJECT_MASK, 0);
 }
 
@@ -327,7 +329,7 @@ error_lanes_malloc:
 }
 
 /*
- * lane_init_data -- initalizes ulogs for all the lanes
+ * lane_init_data -- initializes ulogs for all the lanes
  */
 void
 lane_init_data(PMEMobjpool *pop)
@@ -337,11 +339,11 @@ lane_init_data(PMEMobjpool *pop)
 	for (uint64_t i = 0; i < pop->nlanes; ++i) {
 		layout = lane_get_layout(pop, i);
 		ulog_construct(OBJ_PTR_TO_OFF(pop, &layout->internal),
-			LANE_REDO_INTERNAL_SIZE, 0, &pop->p_ops);
+			LANE_REDO_INTERNAL_SIZE, 0, 0, 0, &pop->p_ops);
 		ulog_construct(OBJ_PTR_TO_OFF(pop, &layout->external),
-			LANE_REDO_EXTERNAL_SIZE, 0, &pop->p_ops);
+			LANE_REDO_EXTERNAL_SIZE, 0, 0, 0, &pop->p_ops);
 		ulog_construct(OBJ_PTR_TO_OFF(pop, &layout->undo),
-			LANE_UNDO_SIZE, 0, &pop->p_ops);
+			LANE_UNDO_SIZE, 0, 0, 0, &pop->p_ops);
 	}
 	layout = lane_get_layout(pop, 0);
 	pmemops_xpersist(&pop->p_ops, layout,
@@ -402,24 +404,11 @@ lane_recover_and_section_boot(PMEMobjpool *pop)
 	 * a undo recovery might require deallocation of the next ulogs.
 	 */
 	for (i = 0; i < pop->nlanes; ++i) {
-		layout = lane_get_layout(pop, i);
-
-		struct ulog *undo = (struct ulog *)&layout->undo;
-
-		struct operation_context *ctx = operation_new(
-			undo,
-			LANE_UNDO_SIZE,
-			lane_undo_extend, (ulog_free_fn)pfree, &pop->p_ops,
-			LOG_TYPE_UNDO);
-		if (ctx == NULL) {
-			LOG(2, "undo recovery failed %" PRIu64 " %d",
-				i, err);
-			return err;
-		}
+		struct operation_context *ctx = pop->lanes_desc.lane[i].undo;
 		operation_resume(ctx);
 		operation_process(ctx);
-		operation_finish(ctx);
-		operation_delete(ctx);
+		operation_finish(ctx, ULOG_INC_FIRST_GEN_NUM |
+				ULOG_FREE_AFTER_FIRST);
 	}
 
 	return 0;
@@ -508,7 +497,7 @@ get_lane_info_record(PMEMobjpool *pop)
 		lane_info_ht_boot();
 	}
 
-	struct lane_info *info = cuckoo_get(Lane_info_ht, pop->uuid_lo);
+	struct lane_info *info = critnib_get(Lane_info_ht, pop->uuid_lo);
 
 	if (unlikely(info == NULL)) {
 		info = Malloc(sizeof(struct lane_info));
@@ -527,9 +516,9 @@ get_lane_info_record(PMEMobjpool *pop)
 		}
 		Lane_info_records = info;
 
-		if (unlikely(cuckoo_insert(
+		if (unlikely(critnib_insert(
 				Lane_info_ht, pop->uuid_lo, info) != 0)) {
-			FATAL("cuckoo_insert");
+			FATAL("critnib_insert");
 		}
 	}
 
@@ -580,30 +569,6 @@ lane_hold(PMEMobjpool *pop, struct lane **lanep)
 
 	if (lanep)
 		*lanep = l;
-
-	return (unsigned)lane->lane_idx;
-}
-
-/*
- * lane_attach -- attaches the lane with the given index to the current thread
- */
-void
-lane_attach(PMEMobjpool *pop, unsigned lane)
-{
-	struct lane_info *info = get_lane_info_record(pop);
-	info->nest_count = 1;
-	info->lane_idx = lane;
-}
-
-/*
- * lane_detach -- detaches the currently held lane from the current thread
- */
-unsigned
-lane_detach(PMEMobjpool *pop)
-{
-	struct lane_info *lane = get_lane_info_record(pop);
-	lane->nest_count -= 1;
-	ASSERTeq(lane->nest_count, 0);
 
 	return (unsigned)lane->lane_idx;
 }

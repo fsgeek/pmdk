@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright 2014-2018, Intel Corporation
+# Copyright 2014-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -306,7 +306,7 @@ runtest() {
 	runscripts=$testfile
 	if [ "$runscripts" = all ]; then
 		if [ "$testseq" = all ]; then
-			runscripts=`ls -1 TEST* | grep -v -i -e "\.ps1" | sort -V`
+			runscripts=`ls -1 TEST* | grep '^TEST[0-9]\+$' | sort -V`
 		else
 			# generate test sequence
 			seqs=(${testseq//,/ })
@@ -367,8 +367,29 @@ runtest() {
 		provs=$(intersection "$provider" "$req_provider" "verbs sockets")
 		pmeths=$(intersection "$pmethod" "$req_pmethod" "GPSPM APM")
 
+		# remote tests require both providers and pmethods
+		# local tests require neither providers nor pmethods
+		# anything in between indicates invalid test configuration
+		[ "$req_provider" == "none" -a "$req_pmethod" != "none" ] ||
+			[ "$req_provider" != "none" -a "$req_pmethod" == "none" ] && {
+				echo "$UNITTEST_NAME: invalid test configuration"
+				echo "CONF_(GLOBAL_)RPMEM_PROVIDER ($req_provider) and " \
+					"CONF_(GLOBAL_)RPMEM_PMETHOD ($req_pmethod) have to be set both or neither"
+				exit 1
+			}
+
 		# skip remote test if required providers or persistency methods are missing
-		[[ ( -n "$provs" && -z "$pmeths" ) || ( -z "$provs" && -n "$pmeths" ) ]] && continue
+		# remote tests have req_provider != "none"
+		[ "$req_provider" != "none" ] && {
+			[ -z "$provs" ] && {
+				echo "$UNITTEST_NAME: SKIP: required providers ($req_provider) are missing"
+				continue
+			}
+			[ -z "$pmeths" ] && {
+				echo "$UNITTEST_NAME: SKIP: required pmethods ($req_pmethod) are missing"
+				continue
+			}
+		}
 
 		# for each fs-type being tested...
 		for fs in $fss
@@ -406,7 +427,8 @@ runtest() {
 				# to not overwrite logs skip other tests from the group
 				# if KEEP_GOING=y and test fail
 				if [ "$keep_going_skip" == "n" ]; then
-					if [ -n "$provs" -a -n "$pmeths" ]; then
+					# remote tests have req_provider != "none"
+					if [ "$req_provider" != "none" ]; then
 						runtest_remote "$provs" "$pmeths"
 					else
 						runtest_local
@@ -469,11 +491,13 @@ verbose_tests=
 [ -n "$KEEP_GOING" ] && keep_going=$KEEP_GOING
 [ -n "$VERBOSE_TESTS" ] && verbose_tests="$VERBOSE_TESTS"
 
-
 PMEMDETECT="tools/pmemdetect/pmemdetect.static-nondebug"
+pmemdetect() {
+	LD_LIBRARY_PATH=$LIBNDCTL_LD_LIBRARY_PATHS:$LD_LIBRARY_PATH $PMEMDETECT "$@"
+}
 
 if [ "$PMEM_FS_DIR_FORCE_PMEM" = "1" ]; then
-	if $PMEMDETECT -s $PMEM_FS_DIR; then
+	if pmemdetect -s $PMEM_FS_DIR; then
 		echo "error: PMEM_FS_DIR_FORCE_PMEM variable is set but PMEM_FS_DIR [" $PMEM_FS_DIR  "] supports MAP_SYNC"
 		echo "Setting this flag prevents from testing an integration between pmem_map_file and pmem_is_pmem."
 		echo "If you want to ignore this error, please set PMEM_FS_DIR_FORCE_PMEM=2."
@@ -495,7 +519,7 @@ if [ -d "$PMEM_FS_DIR" ]; then
 	if [ "$PMEM_FS_DIR_FORCE_PMEM" = "1" ] || [ "$PMEM_FS_DIR_FORCE_PMEM" = "2" ]; then
 		PMEM_IS_PMEM=0
 	else
-		$PMEMDETECT "$PMEM_FS_DIR"
+		pmemdetect "$PMEM_FS_DIR"
 		PMEM_IS_PMEM=$?
 	fi
 
@@ -506,7 +530,7 @@ if [ -d "$PMEM_FS_DIR" ]; then
 fi
 
 if [ -d "$NON_PMEM_FS_DIR" ]; then
-	$PMEMDETECT "$NON_PMEM_FS_DIR"
+	pmemdetect "$NON_PMEM_FS_DIR"
 	NON_PMEM_IS_PMEM=$?
 	if [ $NON_PMEM_IS_PMEM -eq 0 ]; then
 		echo "error: NON_PMEM_FS_DIR=$NON_PMEM_FS_DIR does not point to a non-PMEM device"

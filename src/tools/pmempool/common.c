@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -151,21 +151,6 @@ pmem_pool_type_parse_str(const char *str)
 	} else {
 		return PMEM_POOL_TYPE_UNKNOWN;
 	}
-}
-
-/*
- * util_validate_checksum -- validate checksum and return valid one
- */
-int
-util_validate_checksum(void *addr, size_t len, uint64_t *csum,
-	uint64_t skip_off)
-{
-	/* validate checksum */
-	int csum_valid = util_checksum(addr, len, csum, 0, skip_off);
-	/* get valid one */
-	if (!csum_valid)
-		util_checksum(addr, len, csum, 1, skip_off);
-	return csum_valid;
 }
 
 /*
@@ -352,11 +337,11 @@ util_ranges_add(struct ranges *rangesp, struct range range)
 	uint64_t first = rangep->first;
 	uint64_t last = rangep->last;
 
-	curp = LIST_FIRST(&rangesp->head);
+	curp = PMDK_LIST_FIRST(&rangesp->head);
 	while (curp) {
-		next = LIST_NEXT(curp, next);
+		next = PMDK_LIST_NEXT(curp, next);
 		if (util_ranges_overlap(curp, rangep)) {
-			LIST_REMOVE(curp, next);
+			PMDK_LIST_REMOVE(curp, next);
 			if (curp->first < first)
 				first = curp->first;
 			if (curp->last > last)
@@ -369,14 +354,14 @@ util_ranges_add(struct ranges *rangesp, struct range range)
 	rangep->first = first;
 	rangep->last = last;
 
-	LIST_FOREACH(curp, &rangesp->head, next) {
+	PMDK_LIST_FOREACH(curp, &rangesp->head, next) {
 		if (curp->first < rangep->first) {
-			LIST_INSERT_AFTER(curp, rangep, next);
+			PMDK_LIST_INSERT_AFTER(curp, rangep, next);
 			return 0;
 		}
 	}
 
-	LIST_INSERT_HEAD(&rangesp->head, rangep, next);
+	PMDK_LIST_INSERT_HEAD(&rangesp->head, rangep, next);
 
 	return 0;
 }
@@ -388,7 +373,7 @@ int
 util_ranges_contain(const struct ranges *rangesp, uint64_t n)
 {
 	struct range *curp  = NULL;
-	LIST_FOREACH(curp, &rangesp->head, next) {
+	PMDK_LIST_FOREACH(curp, &rangesp->head, next) {
 		if (curp->first <= n && n <= curp->last)
 			return 1;
 	}
@@ -402,7 +387,7 @@ util_ranges_contain(const struct ranges *rangesp, uint64_t n)
 int
 util_ranges_empty(const struct ranges *rangesp)
 {
-	return LIST_EMPTY(&rangesp->head);
+	return PMDK_LIST_EMPTY(&rangesp->head);
 }
 
 /*
@@ -411,9 +396,9 @@ util_ranges_empty(const struct ranges *rangesp)
 void
 util_ranges_clear(struct ranges *rangesp)
 {
-	while (!LIST_EMPTY(&rangesp->head)) {
-		struct range *rangep = LIST_FIRST(&rangesp->head);
-		LIST_REMOVE(rangep, next);
+	while (!PMDK_LIST_EMPTY(&rangesp->head)) {
+		struct range *rangep = PMDK_LIST_FIRST(&rangesp->head);
+		PMDK_LIST_REMOVE(rangep, next);
 		free(rangep);
 	}
 }
@@ -740,6 +725,12 @@ pmempool_ask_yes_no(char def_ans, const char *answers, const char *qbuff)
 	printf("] ");
 
 	char *line_of_answer = util_readline(stdin);
+
+	if (line_of_answer == NULL) {
+		outv_err("input is empty");
+		return '?';
+	}
+
 	char first_letter = line_of_answer[0];
 	line_of_answer[0] = (char)tolower(first_letter);
 
@@ -802,18 +793,11 @@ ask(char op, char *answers, char def_ans, const char *fmt, va_list ap)
 }
 
 char
-ask_yn(char op, char def_ans, const char *fmt, va_list ap)
-{
-	char ret = ask(op, "yn", def_ans, fmt, ap);
-	return ret;
-}
-
-char
 ask_Yn(char op, const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	char ret = ask_yn(op, 'y', fmt, ap);
+	char ret = ask(op, "yn", 'y', fmt, ap);
 	va_end(ap);
 	return ret;
 }
@@ -823,7 +807,7 @@ ask_yN(char op, const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	char ret = ask_yn(op, 'n', fmt, ap);
+	char ret = ask(op, "yn", 'n', fmt, ap);
 	va_end(ap);
 	return ret;
 }
@@ -1418,7 +1402,8 @@ util_pool_clear_badblocks(const char *path, int create)
 	}
 
 	if (badblocks_clear_poolset(setp, create)) {
-		ERR("clearing bad blocks in the pool set failed -- '%s'", path);
+		outv_err("clearing bad blocks in the pool set failed -- '%s'",
+			path);
 		errno = EIO;
 		return -1;
 	}

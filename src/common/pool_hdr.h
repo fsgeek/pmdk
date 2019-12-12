@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -42,6 +42,8 @@
 #include <unistd.h>
 #include "uuid.h"
 #include "shutdown_state.h"
+#include "util.h"
+#include "page_size.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -103,6 +105,7 @@ struct arch_flags {
 /* possible values of the machine field in the above struct */
 #define PMDK_MACHINE_X86_64 62
 #define PMDK_MACHINE_AARCH64 183
+#define PMDK_MACHINE_PPC64 21
 
 /* possible values of the data field in the above struct */
 #define PMDK_DATA_LE 1 /* 2's complement, little endian */
@@ -124,7 +127,9 @@ typedef struct {
  * below are stored in little-endian byte order.
  */
 #define POOL_HDR_SIG_LEN 8
-
+#define POOL_HDR_UNUSED_SIZE 1904
+#define POOL_HDR_UNUSED2_SIZE 1976
+#define POOL_HDR_ALIGN_PAD (PMEM_PAGESIZE - 4096)
 struct pool_hdr {
 	char signature[POOL_HDR_SIG_LEN];
 	uint32_t major;			/* format major version number */
@@ -137,16 +142,20 @@ struct pool_hdr {
 	uuid_t next_repl_uuid;		/* next replica */
 	uint64_t crtime;		/* when created (seconds since epoch) */
 	struct arch_flags arch_flags;	/* architecture identification flags */
-	unsigned char unused[1904];	/* must be zero */
+	unsigned char unused[POOL_HDR_UNUSED_SIZE];	/* must be zero */
 	/* not checksumed */
-	unsigned char unused2[1976];	/* must be zero */
+	unsigned char unused2[POOL_HDR_UNUSED2_SIZE];	/* must be zero */
 	struct shutdown_state sds;	/* shutdown status */
 	uint64_t checksum;		/* checksum of above fields */
+
+#if PMEM_PAGESIZE > 4096 /* prevent zero size array */
+	unsigned char align_pad[POOL_HDR_ALIGN_PAD];	/* alignment pad */
+#endif
 };
 
 #define POOL_HDR_SIZE	(sizeof(struct pool_hdr))
 
-#define POOL_DESC_SIZE 4096
+#define POOL_DESC_SIZE PMEM_PAGESIZE
 
 void util_convert2le_hdr(struct pool_hdr *hdrp);
 void util_convert2h_hdr_nocheck(struct pool_hdr *hdrp);
@@ -227,16 +236,24 @@ static const features_t features_zero =
 #define POOL_FEAT_INCOMPAT_VALID \
 	(POOL_FEAT_SINGLEHDR | POOL_FEAT_CKSUM_2K | POOL_E_FEAT_SDS)
 
-#ifdef _WIN32
+#if defined(_WIN32) || NDCTL_ENABLED
 #define POOL_FEAT_INCOMPAT_DEFAULT \
 	(POOL_FEAT_CKSUM_2K | POOL_E_FEAT_SDS)
 #else
 /*
- * shutdown state support on Linux requires root access
- * so it is disabled by default
+ * shutdown state support on Linux requires root access on kernel < 4.20 with
+ * ndctl < 63 so it is disabled by default
  */
 #define POOL_FEAT_INCOMPAT_DEFAULT \
 	(POOL_FEAT_CKSUM_2K)
+#endif
+
+#if NDCTL_ENABLED
+#define POOL_FEAT_COMPAT_DEFAULT \
+	(POOL_FEAT_CHECK_BAD_BLOCKS)
+#else
+#define POOL_FEAT_COMPAT_DEFAULT \
+	(POOL_FEAT_ZERO)
 #endif
 
 #define FEAT_INCOMPAT(X) \

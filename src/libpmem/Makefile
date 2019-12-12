@@ -1,4 +1,4 @@
-# Copyright 2014-2018, Intel Corporation
+# Copyright 2014-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -38,6 +38,7 @@ LIBRARY_NAME = pmem
 LIBRARY_SO_VERSION = 1
 LIBRARY_VERSION = 0.0
 SOURCE =\
+	$(COMMON)/alloc.c\
 	$(COMMON)/file.c\
 	$(COMMON)/file_posix.c\
 	$(COMMON)/fs_posix.c\
@@ -46,22 +47,36 @@ SOURCE =\
 	$(COMMON)/os_posix.c\
 	$(COMMON)/os_thread_posix.c\
 	$(COMMON)/os_deep_linux.c\
-	$(COMMON)/os_auto_flush_linux.c\
 	$(COMMON)/out.c\
 	$(COMMON)/util.c\
 	$(COMMON)/util_posix.c\
 	libpmem.c\
 	memops_generic.c\
 	pmem.c\
-	pmem_posix.c
+	pmem_posix.c\
+	$(PMEM2)/pmem2_utils.c\
+	$(PMEM2)/config.c\
+	$(PMEM2)/config_posix.c
 
-include $(ARCH)/sources.inc
+ifeq ($(OS_KERNEL_NAME),Linux)
+SOURCE +=\
+	$(PMEM2)/pmem2_utils_linux.c\
+	$(PMEM2)/auto_flush_linux.c
+else
+SOURCE +=\
+	$(PMEM2)/pmem2_utils_other.c\
+	$(PMEM2)/auto_flush_none.c
+endif
 
-SOURCE += $(LIBPMEM_ARCH_SOURCE)
+INCS += -I$(TOP)/src/libpmem2
+
+include ../libpmem2/$(ARCH)/sources.inc
+
+SOURCE += $(LIBPMEM2_ARCH_SOURCE)
 
 include ../Makefile.inc
 
-include $(ARCH)/flags.inc
+include $(PMEM2)/$(ARCH)/flags.inc
 
 CFLAGS += -I.
 LIBS += -pthread

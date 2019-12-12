@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2018, Intel Corporation
+ * Copyright 2015-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -50,6 +50,7 @@
 #include <sys/stat.h>
 #include <sys/file.h>
 
+#include "alloc.h"
 #include "file.h"
 #include "out.h"
 #include "os.h"
@@ -193,7 +194,7 @@ util_file_dir_close(struct dir_handle *handle)
 }
 
 /*
- * util_file_dir_close -- remove directory
+ * util_file_dir_remove -- remove directory
  */
 int
 util_file_dir_remove(const char *path)

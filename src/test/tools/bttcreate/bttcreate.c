@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -50,6 +50,7 @@
 #include "btt_layout.h"
 #include "pmemcommon.h"
 #include "os.h"
+#include "util.h"
 
 #define BTT_CREATE_DEF_SIZE	(20 * 1UL << 20) /* 20 MB */
 #define BTT_CREATE_DEF_BLK_SIZE	512UL
@@ -101,7 +102,9 @@ nswrite(void *ns, unsigned lane, const void *buf,
 		errno = EINVAL;
 		return -1;
 	}
+
 	memcpy((char *)nsc->addr + off, buf, count);
+
 	return 0;
 }
 
@@ -207,6 +210,7 @@ int
 main(int argc, char *argv[])
 {
 #ifdef _WIN32
+	util_suppress_errmsg();
 	wchar_t **wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
 	for (int i = 0; i < argc; i++) {
 		argv[i] = util_toUTF8(wargv[i]);
@@ -218,7 +222,6 @@ main(int argc, char *argv[])
 		}
 	}
 #endif
-
 	common_init("", "", "", 0, 0);
 
 	int opt;
@@ -329,7 +332,7 @@ main(int argc, char *argv[])
 	}
 
 	/* map created file */
-	void *base = util_map(fd, opts.poolsize, MAP_SHARED, 0, 0, NULL);
+	void *base = util_map(fd, 0, opts.poolsize, MAP_SHARED, 0, 0, NULL);
 	if (!base) {
 		perror("util_map");
 		res = file_error(fd, opts.fpath);
@@ -386,9 +389,12 @@ main(int argc, char *argv[])
 	/* print results */
 	print_result(&opts);
 
-
 error_btt:
 	btt_fini(bttp);
+	if (util_unmap(base, opts.poolsize) < 0) {
+		perror("!util_unmap");
+		res = -1;
+	}
 error_map:
 	common_fini();
 error:

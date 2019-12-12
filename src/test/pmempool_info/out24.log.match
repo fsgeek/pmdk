@@ -1,23 +1,23 @@
-    "badblock_count":1,
-        "offset":11,
-        "length":1,
+    "badblock_count":8,
+        "offset":16,
+        "length":8,
 Poolset structure:
 Number of replicas       : 1
 Replica 0 (master) - local, 1 part(s):
 part 0:
-path                     : /dev/dax$(N).0
+path                     : /dev/dax$(N).$(N)
 type                     : device dax
 size                     : $(nW)
-alignment                : 4096
+alignment                : $(N)
 bad blocks:
 	offset		length
-	11		1
+	16		8
 
 POOL Header:
 Signature                : PMEMOBJ
 Major                    : $(nW)
 Mandatory features       : $(*)
-Not mandatory features   : 0x0
+Not mandatory features   : $(*)
 Forced RO                : 0x0
 Pool set UUID            : $(nW)
 UUID                     : $(nW)

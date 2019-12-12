@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2018, Intel Corporation
+ * Copyright 2015-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -61,10 +61,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <util.h>
 
 #include "benchmark_time.hpp"
 #include "os.h"
+#include "util.h"
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
@@ -289,7 +289,7 @@ struct operation_info {
  *                execution time of operation function. If set to false, the
  *                benchmark must report the execution time by itself.
  * init_worker	: Callback for initialization thread specific data. Invoked in
- *                a single thread for every thread worker.
+ *                the worker thread but globally serialized.
  * operation	: Callback function which does the main job of benchmark.
  * rm_file	: Indicates whether the test file should be removed by
  *                framework before the init function will be called.

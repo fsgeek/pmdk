@@ -1,5 +1,5 @@
 /*
- * Copyright 2018, Intel Corporation
+ * Copyright 2018-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -43,6 +43,7 @@
 #include <stdbool.h>
 #include <errno.h>
 #include "unittest.h"
+#include "pmem.h"
 #include "pmemcommon.h"
 #include "set.h"
 #include "mocks_windows.h"
@@ -70,6 +71,8 @@ main(int argc, char *argv[])
 		UT_FATAL("usage: pmem_has_auto_flush_win "
 				"<option> <type> <capabilities>",
 			argv[0]);
+
+	pmem_init();
 
 	Pc_type = (size_t)atoi(argv[2]);
 	Pc_capabilities = (size_t)atoi(argv[3]);

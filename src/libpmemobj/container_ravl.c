@@ -1,5 +1,5 @@
 /*
- * Copyright 2018, Intel Corporation
+ * Copyright 2018-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -137,19 +137,6 @@ container_ravl_get_rm_block_exact(struct block_container *bc,
 }
 
 /*
- * container_ravl_get_block_exact -- (internal) finds exact match memory block
- */
-static int
-container_ravl_get_block_exact(struct block_container *bc,
-	const struct memory_block *m)
-{
-	struct block_container_ravl *c =
-		(struct block_container_ravl *)bc;
-
-	return ravl_find(c->tree, m, RAVL_PREDICATE_EQUAL) ? 0 : ENOMEM;
-}
-
-/*
  * container_ravl_is_empty -- (internal) checks whether the container is empty
  */
 static int
@@ -195,11 +182,10 @@ container_ravl_destroy(struct block_container *bc)
  * The get methods also guarantee that the block with lowest possible address
  * that best matches the requirements is provided.
  */
-static struct block_container_ops container_ravl_ops = {
+static const struct block_container_ops container_ravl_ops = {
 	.insert = container_ravl_insert_block,
 	.get_rm_exact = container_ravl_get_rm_block_exact,
 	.get_rm_bestfit = container_ravl_get_rm_block_bestfit,
-	.get_exact = container_ravl_get_block_exact,
 	.is_empty = container_ravl_is_empty,
 	.rm_all = container_ravl_rm_all,
 	.destroy = container_ravl_destroy,

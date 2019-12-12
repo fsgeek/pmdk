@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -385,8 +385,8 @@ parse_args(const char *appname, int argc, char *argv[],
 			} else if (strcmp(optarg, "yes") == 0) {
 				argsp->badblocks = PRINT_BAD_BLOCKS_YES;
 			} else {
-				ERR(
-					"'%s' -- invalid argument of the '--bad-blocks' option\n",
+				outv_err(
+					"'%s' -- invalid argument of the '-k/--bad-blocks' option\n",
 					optarg);
 				return -1;
 			}
@@ -568,7 +568,7 @@ pmempool_info_badblocks(struct pmem_info *pip, const char *file_name, int v)
 	ret = os_badblocks_get(file_name, bbs);
 	if (ret) {
 		if (errno == ENOTSUP) {
-			outv(v, BB_NOT_SUPP);
+			outv(v, BB_NOT_SUPP "\n");
 			ret = -1;
 			goto exit_free;
 		}
@@ -1001,12 +1001,12 @@ pmempool_info_alloc(void)
 				sizeof(long_options[0]),
 				option_requirements);
 
-		LIST_INIT(&pip->args.ranges.head);
-		LIST_INIT(&pip->args.obj.type_ranges.head);
-		LIST_INIT(&pip->args.obj.lane_ranges.head);
-		LIST_INIT(&pip->args.obj.zone_ranges.head);
-		LIST_INIT(&pip->args.obj.chunk_ranges.head);
-		TAILQ_INIT(&pip->obj.stats.type_stats);
+		PMDK_LIST_INIT(&pip->args.ranges.head);
+		PMDK_LIST_INIT(&pip->args.obj.type_ranges.head);
+		PMDK_LIST_INIT(&pip->args.obj.lane_ranges.head);
+		PMDK_LIST_INIT(&pip->args.obj.zone_ranges.head);
+		PMDK_LIST_INIT(&pip->args.obj.chunk_ranges.head);
+		PMDK_TAILQ_INIT(&pip->obj.stats.type_stats);
 	}
 
 	return pip;
@@ -1031,10 +1031,10 @@ pmempool_info_free(struct pmem_info *pip)
 	util_ranges_clear(&pip->args.obj.chunk_ranges);
 	util_ranges_clear(&pip->args.obj.lane_ranges);
 
-	while (!TAILQ_EMPTY(&pip->obj.stats.type_stats)) {
+	while (!PMDK_TAILQ_EMPTY(&pip->obj.stats.type_stats)) {
 		struct pmem_obj_type_stats *type =
-			TAILQ_FIRST(&pip->obj.stats.type_stats);
-		TAILQ_REMOVE(&pip->obj.stats.type_stats, type, next);
+			PMDK_TAILQ_FIRST(&pip->obj.stats.type_stats);
+		PMDK_TAILQ_REMOVE(&pip->obj.stats.type_stats, type, next);
 		free(type);
 	}
 

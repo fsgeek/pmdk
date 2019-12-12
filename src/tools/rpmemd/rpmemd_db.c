@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -66,13 +66,13 @@ struct rpmemd_db {
 /*
  * declaration of the 'struct list_head' type
  */
-LIST_HEAD(list_head, rpmemd_db_entry);
+PMDK_LIST_HEAD(list_head, rpmemd_db_entry);
 
 /*
  * struct rpmemd_db_entry -- entry in the pool set list
  */
 struct rpmemd_db_entry {
-	LIST_ENTRY(rpmemd_db_entry) next;
+	PMDK_LIST_ENTRY(rpmemd_db_entry) next;
 	char *pool_desc;
 	struct pool_set *set;
 };
@@ -383,7 +383,7 @@ rm_poolset_cb(struct part_file *pf, void *arg)
 		return -1;
 	}
 
-	int ret = util_unlink(pf->part->path);
+	int ret = util_unlink_flock(pf->part->path);
 	if (!args->force && ret) {
 		RPMEMD_LOG(ERR, "!unlink -- '%s'", pf->part->path);
 		args->ret = ret;
@@ -470,7 +470,7 @@ rpmemd_db_check_dups(struct list_head *head, struct rpmemd_db *db,
 {
 	struct rpmemd_db_entry *edb;
 
-	LIST_FOREACH(edb, head, next) {
+	PMDK_LIST_FOREACH(edb, head, next) {
 		for (unsigned r = 0; r < edb->set->nreplicas; r++) {
 			struct pool_replica *rep = edb->set->replica[r];
 			for (unsigned p = 0; p < rep->nparts; p++) {
@@ -514,7 +514,7 @@ rpmemd_db_add(struct list_head *head, struct rpmemd_db *db,
 		goto err_strdup;
 	}
 
-	LIST_INSERT_HEAD(head, edb, next);
+	PMDK_LIST_INSERT_HEAD(head, edb, next);
 
 	return edb;
 
@@ -637,13 +637,13 @@ rpmemd_db_check_dir(struct rpmemd_db *db)
 	util_mutex_lock(&db->lock);
 
 	struct list_head head;
-	LIST_INIT(&head);
+	PMDK_LIST_INIT(&head);
 
 	int ret = rpmemd_db_check_dir_r(&head, db, db->root_dir, "");
 
-	while (!LIST_EMPTY(&head)) {
-		struct rpmemd_db_entry *edb = LIST_FIRST(&head);
-		LIST_REMOVE(edb, next);
+	while (!PMDK_LIST_EMPTY(&head)) {
+		struct rpmemd_db_entry *edb = PMDK_LIST_FIRST(&head);
+		PMDK_LIST_REMOVE(edb, next);
 		util_poolset_close(edb->set, DO_NOT_DELETE_PARTS);
 		free(edb->pool_desc);
 		free(edb);

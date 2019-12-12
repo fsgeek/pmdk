@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -46,11 +46,19 @@
 #include "memops.h"
 #include "obj.h"
 #include "out.h"
+#include "ravl.h"
 #include "valgrind_internal.h"
 #include "vecq.h"
+#include "sys_util.h"
 
 #define ULOG_BASE_SIZE 1024
 #define OP_MERGE_SEARCH 64
+
+enum operation_state {
+	OPERATION_IDLE,
+	OPERATION_IN_PROGRESS,
+	OPERATION_CLEANUP,
+};
 
 struct operation_log {
 	size_t capacity; /* capacity of the ulog log */
@@ -73,16 +81,19 @@ struct operation_context {
 
 	size_t ulog_curr_offset; /* offset in the log for buffer stores */
 	size_t ulog_curr_capacity; /* capacity of the current log */
+	size_t ulog_curr_gen_num; /* transaction counter in the current log */
 	struct ulog *ulog_curr; /* current persistent log */
 	size_t total_logged; /* total amount of buffer stores in the logs */
 
 	struct ulog *ulog; /* pointer to the persistent ulog log */
 	size_t ulog_base_nbytes; /* available bytes in initial ulog log */
 	size_t ulog_capacity; /* sum of capacity, incl all next ulog logs */
+	int ulog_auto_reserve; /* allow or do not to auto ulog reservation */
+	int ulog_any_user_buffer; /* set if any user buffer is added */
 
 	struct ulog_next next; /* vector of 'next' fields of persistent ulog */
 
-	int in_progress; /* operation sanity check */
+	enum operation_state state; /* operation sanity check */
 
 	struct operation_log pshadow_ops; /* shadow copy of persistent ulog */
 	struct operation_log transient_ops; /* log of transient changes */
@@ -185,11 +196,12 @@ operation_new(struct ulog *ulog, size_t ulog_base_nbytes,
 		ulog_base_nbytes, p_ops);
 	ctx->extend = extend;
 	ctx->ulog_free = ulog_free;
-	ctx->in_progress = 0;
+	ctx->state = OPERATION_IDLE;
 	VEC_INIT(&ctx->next);
 	ulog_rebuild_next_vec(ulog, &ctx->next, p_ops);
 	ctx->p_ops = p_ops;
 	ctx->type = type;
+	ctx->ulog_any_user_buffer = 0;
 
 	ctx->ulog_curr_offset = 0;
 	ctx->ulog_curr_capacity = 0;
@@ -231,6 +243,52 @@ operation_delete(struct operation_context *ctx)
 	Free(ctx->pshadow_ops.ulog);
 	Free(ctx->transient_ops.ulog);
 	Free(ctx);
+}
+
+/*
+ * operation_user_buffer_remove -- removes range from the tree and returns 0
+ */
+static int
+operation_user_buffer_remove(void *base, void *addr)
+{
+	PMEMobjpool *pop = base;
+	if (!pop->ulog_user_buffers.verify)
+		return 0;
+
+	util_mutex_lock(&pop->ulog_user_buffers.lock);
+
+	struct ravl *ravl = pop->ulog_user_buffers.map;
+	enum ravl_predicate predict = RAVL_PREDICATE_EQUAL;
+
+	struct user_buffer_def range;
+	range.addr = addr;
+	range.size = 0;
+
+	struct ravl_node *n = ravl_find(ravl, &range, predict);
+	ASSERTne(n, NULL);
+	ravl_remove(ravl, n);
+
+	util_mutex_unlock(&pop->ulog_user_buffers.lock);
+
+	return 0;
+}
+
+/*
+ * operation_free_logs -- free all logs except first
+ */
+void
+operation_free_logs(struct operation_context *ctx, uint64_t flags)
+{
+	int freed = ulog_free_next(ctx->ulog, ctx->p_ops, ctx->ulog_free,
+			operation_user_buffer_remove, flags);
+	if (freed) {
+		ctx->ulog_capacity = ulog_capacity(ctx->ulog,
+			ctx->ulog_base_nbytes, ctx->p_ops);
+		VEC_CLEAR(&ctx->next);
+		ulog_rebuild_next_vec(ctx->ulog, &ctx->next, ctx->p_ops);
+	}
+
+	ASSERTeq(VEC_SIZE(&ctx->next), 0);
 }
 
 /*
@@ -330,6 +388,7 @@ operation_add_typed_entry(struct operation_context *ctx,
 			return -1;
 		oplog->capacity += ULOG_BASE_SIZE;
 		oplog->ulog = ulog;
+		oplog->ulog->capacity = oplog->capacity;
 
 		/*
 		 * Realloc invalidated the ulog entries that are inside of this
@@ -383,6 +442,7 @@ operation_add_buffer(struct operation_context *ctx,
 
 	/* if there's no space left in the log, reserve some more */
 	if (ctx->ulog_curr_capacity == 0) {
+		ctx->ulog_curr_gen_num = ctx->ulog->gen_num;
 		if (operation_reserve(ctx, ctx->total_logged + real_size) != 0)
 			return -1;
 
@@ -395,13 +455,32 @@ operation_add_buffer(struct operation_context *ctx,
 
 	size_t curr_size = MIN(real_size, ctx->ulog_curr_capacity);
 	size_t data_size = curr_size - sizeof(struct ulog_entry_buf);
+	size_t entry_size = ALIGN_UP(curr_size, CACHELINE_SIZE);
+
+	/*
+	 * To make sure that the log is consistent and contiguous, we need
+	 * make sure that the header of the entry that would be located
+	 * immediately after this one is zeroed.
+	 */
+	struct ulog_entry_base *next_entry = NULL;
+	if (entry_size == ctx->ulog_curr_capacity) {
+		struct ulog *u = ulog_next(ctx->ulog_curr, ctx->p_ops);
+		if (u != NULL)
+			next_entry = (struct ulog_entry_base *)u->data;
+	} else {
+		size_t next_entry_offset = ctx->ulog_curr_offset + entry_size;
+		next_entry = (struct ulog_entry_base *)(ctx->ulog_curr->data +
+			next_entry_offset);
+	}
+	if (next_entry != NULL)
+		ulog_clobber_entry(next_entry, ctx->p_ops);
 
 	/* create a persistent log entry */
 	struct ulog_entry_buf *e = ulog_entry_buf_create(ctx->ulog_curr,
 		ctx->ulog_curr_offset,
+		ctx->ulog_curr_gen_num,
 		dest, src, data_size,
 		type, ctx->p_ops);
-	size_t entry_size = ALIGN_UP(curr_size, CACHELINE_SIZE);
 	ASSERT(entry_size == ulog_entry_size(&e->base));
 	ASSERT(entry_size <= ctx->ulog_curr_capacity);
 
@@ -417,6 +496,165 @@ operation_add_buffer(struct operation_context *ctx,
 			(char *)dest + data_size,
 			(char *)src + data_size,
 			size - data_size, type);
+}
+
+/*
+ * operation_user_buffer_range_cmp -- compares addresses of
+ * user buffers
+ */
+int
+operation_user_buffer_range_cmp(const void *lhs, const void *rhs)
+{
+	const struct user_buffer_def *l = lhs;
+	const struct user_buffer_def *r = rhs;
+
+	if (l->addr > r->addr)
+		return 1;
+	else if (l->addr < r->addr)
+		return -1;
+
+	return 0;
+}
+
+/*
+ * operation_user_buffer_try_insert -- adds a user buffer range to the tree,
+ * if the buffer already exists in the tree function returns -1, otherwise
+ * it returns 0
+ */
+static int
+operation_user_buffer_try_insert(PMEMobjpool *pop,
+	struct user_buffer_def *userbuf)
+{
+	int ret = 0;
+
+	if (!pop->ulog_user_buffers.verify)
+		return ret;
+
+	util_mutex_lock(&pop->ulog_user_buffers.lock);
+
+	void *addr_end = (char *)userbuf->addr + userbuf->size;
+	struct user_buffer_def search;
+	search.addr = addr_end;
+	struct ravl_node *n = ravl_find(pop->ulog_user_buffers.map,
+		&search, RAVL_PREDICATE_LESS_EQUAL);
+	if (n != NULL) {
+		struct user_buffer_def *r = ravl_data(n);
+		void *r_end = (char *)r->addr + r->size;
+
+		if (r_end > userbuf->addr && r->addr < addr_end) {
+			/* what was found overlaps with what is being added */
+			ret = -1;
+			goto out;
+		}
+	}
+
+	if (ravl_emplace_copy(pop->ulog_user_buffers.map, userbuf) == -1) {
+		ASSERTne(errno, EEXIST);
+		ret = -1;
+	}
+
+out:
+	util_mutex_unlock(&pop->ulog_user_buffers.lock);
+	return ret;
+}
+
+/*
+ * operation_user_buffer_verify_align -- verify if the provided buffer can be
+ *	used as a transaction log, and if so - perform necessary alignments
+ */
+int
+operation_user_buffer_verify_align(struct operation_context *ctx,
+		struct user_buffer_def *userbuf)
+{
+	/*
+	 * Address of the buffer has to be aligned up, and the size
+	 * has to be aligned down, taking into account the number of bytes
+	 * the address was incremented by. The remaining size has to be large
+	 * enough to contain the header and at least one ulog entry.
+	 */
+	uint64_t buffer_offset = OBJ_PTR_TO_OFF(ctx->p_ops->base,
+		userbuf->addr);
+	ptrdiff_t size_diff = (intptr_t)ulog_by_offset(buffer_offset,
+		ctx->p_ops) - (intptr_t)userbuf->addr;
+	ssize_t capacity_unaligned = (ssize_t)userbuf->size - size_diff
+		- (ssize_t)sizeof(struct ulog);
+	if (capacity_unaligned <= (ssize_t)CACHELINE_SIZE) {
+		ERR("Capacity insufficient");
+		return -1;
+	}
+
+	size_t capacity_aligned = ALIGN_DOWN((size_t)capacity_unaligned,
+		CACHELINE_SIZE);
+
+	userbuf->addr = ulog_by_offset(buffer_offset, ctx->p_ops);
+	userbuf->size = capacity_aligned + sizeof(struct ulog);
+
+	if (operation_user_buffer_try_insert(ctx->p_ops->base, userbuf)) {
+		ERR("Buffer currently used");
+		return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * operation_add_user_buffer -- add user buffer to the ulog
+ */
+void
+operation_add_user_buffer(struct operation_context *ctx,
+		struct user_buffer_def *userbuf)
+{
+	uint64_t buffer_offset = OBJ_PTR_TO_OFF(ctx->p_ops->base,
+		userbuf->addr);
+	size_t capacity = userbuf->size - sizeof(struct ulog);
+
+	ulog_construct(buffer_offset, capacity, ctx->ulog->gen_num,
+			1, ULOG_USER_OWNED, ctx->p_ops);
+
+	struct ulog *last_log;
+	/* if there is only one log */
+	if (!VEC_SIZE(&ctx->next))
+		last_log = ctx->ulog;
+	else /* get last element from vector */
+		last_log = ulog_by_offset(VEC_BACK(&ctx->next), ctx->p_ops);
+
+	ASSERTne(last_log, NULL);
+	size_t next_size = sizeof(last_log->next);
+	VALGRIND_ADD_TO_TX(&last_log->next, next_size);
+	last_log->next = buffer_offset;
+	pmemops_persist(ctx->p_ops, &last_log->next, next_size);
+
+	VEC_PUSH_BACK(&ctx->next, buffer_offset);
+	ctx->ulog_capacity += capacity;
+	operation_set_any_user_buffer(ctx, 1);
+}
+
+/*
+ * operation_set_auto_reserve -- set auto reserve value for context
+ */
+void
+operation_set_auto_reserve(struct operation_context *ctx, int auto_reserve)
+{
+	ctx->ulog_auto_reserve = auto_reserve;
+}
+
+/*
+ * operation_set_any_user_buffer -- set ulog_any_user_buffer value for context
+ */
+void
+operation_set_any_user_buffer(struct operation_context *ctx,
+	int any_user_buffer)
+{
+	ctx->ulog_any_user_buffer = any_user_buffer;
+}
+
+/*
+ * operation_get_any_user_buffer -- get ulog_any_user_buffer value from context
+ */
+int
+operation_get_any_user_buffer(struct operation_context *ctx)
+{
+	return ctx->ulog_any_user_buffer;
 }
 
 /*
@@ -461,7 +699,10 @@ operation_reserve(struct operation_context *ctx, size_t new_capacity)
 		}
 
 		if (ulog_reserve(ctx->ulog,
-		    ctx->ulog_base_nbytes, &new_capacity, ctx->extend,
+		    ctx->ulog_base_nbytes,
+		    ctx->ulog_curr_gen_num,
+		    ctx->ulog_auto_reserve,
+		    &new_capacity, ctx->extend,
 		    &ctx->next, ctx->p_ops) != 0)
 			return -1;
 		ctx->ulog_capacity = new_capacity;
@@ -490,8 +731,11 @@ operation_init(struct operation_context *ctx)
 
 	ctx->ulog_curr_offset = 0;
 	ctx->ulog_curr_capacity = 0;
+	ctx->ulog_curr_gen_num = 0;
 	ctx->ulog_curr = NULL;
 	ctx->total_logged = 0;
+	ctx->ulog_auto_reserve = 1;
+	ctx->ulog_any_user_buffer = 0;
 }
 
 /*
@@ -501,16 +745,14 @@ void
 operation_start(struct operation_context *ctx)
 {
 	operation_init(ctx);
-	ASSERTeq(ctx->in_progress, 0);
-	ctx->in_progress = 1;
+	ASSERTeq(ctx->state, OPERATION_IDLE);
+	ctx->state = OPERATION_IN_PROGRESS;
 }
 
 void
 operation_resume(struct operation_context *ctx)
 {
-	operation_init(ctx);
-	ASSERTeq(ctx->in_progress, 0);
-	ctx->in_progress = 1;
+	operation_start(ctx);
 	ctx->total_logged = ulog_base_nbytes(ctx->ulog);
 }
 
@@ -520,8 +762,8 @@ operation_resume(struct operation_context *ctx)
 void
 operation_cancel(struct operation_context *ctx)
 {
-	ASSERTeq(ctx->in_progress, 1);
-	ctx->in_progress = 0;
+	ASSERTeq(ctx->state, OPERATION_IN_PROGRESS);
+	ctx->state = OPERATION_IDLE;
 }
 
 /*
@@ -554,10 +796,13 @@ operation_process(struct operation_context *ctx)
 		}
 	}
 
-	if (redo_process)
+	if (redo_process) {
 		operation_process_persistent_redo(ctx);
-	else if (ctx->type == LOG_TYPE_UNDO)
+		ctx->state = OPERATION_CLEANUP;
+	} else if (ctx->type == LOG_TYPE_UNDO && ctx->total_logged != 0) {
 		operation_process_persistent_undo(ctx);
+		ctx->state = OPERATION_CLEANUP;
+	}
 
 	/* process transient entries with transient memory ops */
 	if (ctx->transient_ops.offset != 0)
@@ -568,21 +813,43 @@ operation_process(struct operation_context *ctx)
  * operation_finish -- finalizes the operation
  */
 void
-operation_finish(struct operation_context *ctx)
+operation_finish(struct operation_context *ctx, unsigned flags)
 {
-	ASSERTeq(ctx->in_progress, 1);
-	ctx->in_progress = 0;
+	ASSERTne(ctx->state, OPERATION_IDLE);
 
-	if (ctx->type == LOG_TYPE_REDO && ctx->pshadow_ops.offset != 0) {
-		operation_process(ctx);
-	} else if (ctx->type == LOG_TYPE_UNDO && ctx->total_logged != 0) {
-		ulog_clobber_data(ctx->ulog,
-			ctx->total_logged, ctx->ulog_base_nbytes,
-			&ctx->next, ctx->ulog_free, ctx->p_ops);
-		/* clobbering might have shrunk the ulog */
-		ctx->ulog_capacity = ulog_capacity(ctx->ulog,
-			ctx->ulog_base_nbytes, ctx->p_ops);
-		VEC_CLEAR(&ctx->next);
-		ulog_rebuild_next_vec(ctx->ulog, &ctx->next, ctx->p_ops);
+	if (ctx->type == LOG_TYPE_UNDO && ctx->total_logged != 0)
+		ctx->state = OPERATION_CLEANUP;
+
+	if (ctx->ulog_any_user_buffer) {
+		flags |= ULOG_ANY_USER_BUFFER;
+		ctx->state = OPERATION_CLEANUP;
 	}
+
+	if (ctx->state != OPERATION_CLEANUP)
+		goto out;
+
+	if (ctx->type == LOG_TYPE_UNDO) {
+		int ret = ulog_clobber_data(ctx->ulog,
+			ctx->total_logged, ctx->ulog_base_nbytes,
+			&ctx->next, ctx->ulog_free,
+			operation_user_buffer_remove,
+			ctx->p_ops, flags);
+		if (ret == 0)
+			goto out;
+	} else if (ctx->type == LOG_TYPE_REDO) {
+		int ret = ulog_free_next(ctx->ulog, ctx->p_ops,
+			ctx->ulog_free, operation_user_buffer_remove,
+			flags);
+		if (ret == 0)
+			goto out;
+	}
+
+	/* clobbering shrunk the ulog */
+	ctx->ulog_capacity = ulog_capacity(ctx->ulog,
+		ctx->ulog_base_nbytes, ctx->p_ops);
+	VEC_CLEAR(&ctx->next);
+	ulog_rebuild_next_vec(ctx->ulog, &ctx->next, ctx->p_ops);
+
+out:
+	ctx->state = OPERATION_IDLE;
 }

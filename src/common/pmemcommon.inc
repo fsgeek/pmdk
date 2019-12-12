@@ -1,4 +1,4 @@
-# Copyright 2017-2018, Intel Corporation
+# Copyright 2017-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -32,11 +32,14 @@
 #
 
 SOURCE =\
+	$(COMMON)/alloc.c\
 	$(COMMON)/badblock_$(OS_DIMM).c\
 	$(COMMON)/badblock.c\
 	$(COMMON)/ctl.c\
 	$(COMMON)/ctl_prefault.c\
 	$(COMMON)/ctl_sds.c\
+	$(COMMON)/ctl_fallocate.c\
+	$(COMMON)/ctl_cow.c\
 	$(call osdep, $(COMMON)/extent,.c)\
 	$(COMMON)/file.c\
 	$(COMMON)/file_posix.c\
@@ -47,12 +50,25 @@ SOURCE =\
 	$(COMMON)/os_thread_posix.c\
 	$(COMMON)/os_dimm_$(OS_DIMM).c\
 	$(COMMON)/os_deep_linux.c\
-	$(COMMON)/os_auto_flush_linux.c\
 	$(COMMON)/out.c\
 	$(COMMON)/pool_hdr.c\
+	$(COMMON)/rand.c\
 	$(COMMON)/set.c\
 	$(COMMON)/shutdown_state.c\
 	$(COMMON)/util.c\
 	$(COMMON)/util_posix.c\
 	$(COMMON)/uuid.c\
-	$(call osdep, $(COMMON)/uuid,.c)
+	$(call osdep, $(COMMON)/uuid,.c)\
+	$(PMEM2)/pmem2_utils.c\
+	$(PMEM2)/config.c\
+	$(PMEM2)/config_posix.c
+
+ifeq ($(OS_KERNEL_NAME),Linux)
+SOURCE +=\
+	$(PMEM2)/pmem2_utils_linux.c\
+	$(PMEM2)/auto_flush_linux.c
+else
+SOURCE +=\
+	$(PMEM2)/auto_flush_none.c\
+	$(PMEM2)/pmem2_utils_other.c
+endif

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -260,8 +260,10 @@ replica_free_poolset_health_status(struct poolset_health_status *set_hs)
 	for (unsigned r = 0; r < set_hs->nreplicas; ++r) {
 		struct replica_health_status *rep_hs = set_hs->replica[r];
 
-		for (unsigned p = 0; p < rep_hs->nparts; ++p)
+		for (unsigned p = 0; p < rep_hs->nparts; ++p) {
 			Free(rep_hs->part[p].recovery_file_name);
+			Free(rep_hs->part[p].bbs.bbv);
+		}
 
 		Free(set_hs->replica[r]);
 	}
@@ -401,7 +403,7 @@ replica_is_replica_healthy(unsigned repn, struct poolset_health_status *set_hs)
 }
 
 /*
- * replica_has_healthy_header -- (interal) check if replica has healthy headers
+ * replica_has_healthy_header -- (internal) check if replica has healthy headers
  */
 static int
 replica_has_healthy_header(unsigned repn, struct poolset_health_status *set_hs)
@@ -690,7 +692,7 @@ check_checksums_and_signatures(struct pool_set *set,
 
 		/*
 		 * Checksums and signatures of remote replicas are checked
-		 * during opening them on the remote side by the rpmem deamon.
+		 * during opening them on the remote side by the rpmem daemon.
 		 * The local version of remote headers does not contain
 		 * such data.
 		 */
@@ -900,7 +902,7 @@ replica_badblocks_recovery_files_check(struct pool_set *set,
 
 		if (rep->remote) {
 			/*
-			 * Bad blocks in remote replicas curently are fixed
+			 * Bad blocks in remote replicas currently are fixed
 			 * during opening by removing and recreating
 			 * the whole remote replica.
 			 */
@@ -1839,8 +1841,6 @@ check_uuids_between_replicas(struct pool_set *set,
 					r);
 				return -1;
 			}
-
-
 		}
 	}
 	return 0;
@@ -2020,23 +2020,44 @@ replica_check_poolset_health(struct pool_set *set,
 	}
 
 	features_t features;
+	int check_bad_blks;
+	int fix_bad_blks = called_from_sync && fix_bad_blocks(flags);
 
-	if (replica_read_features(set, set_hs, &features)) {
+	if (fix_bad_blks) {
+		/*
+		 * We will fix bad blocks, so we cannot read features here,
+		 * because reading could fail, because of bad blocks.
+		 * We will read features after having bad blocks fixed.
+		 *
+		 * Fixing bad blocks implies checking bad blocks.
+		 */
+		check_bad_blks = 1;
+	} else {
+		/*
+		 * We will not fix bad blocks, so we have to read features here.
+		 */
+		if (replica_read_features(set, set_hs, &features)) {
+			LOG(1, "reading features failed");
+			goto err;
+		}
+		check_bad_blks = features.compat & POOL_FEAT_CHECK_BAD_BLOCKS;
+	}
+
+	/* check for bad blocks when in dry run or clear them otherwise */
+	if (replica_badblocks_check_or_clear(set, set_hs, is_dry_run(flags),
+			called_from_sync, check_bad_blks, fix_bad_blks)) {
+		LOG(1, "replica bad_blocks check failed");
+		goto err;
+	}
+
+	/* read features after fixing bad blocks */
+	if (fix_bad_blks && replica_read_features(set, set_hs, &features)) {
 		LOG(1, "reading features failed");
 		goto err;
 	}
 
 	/* set ignore_sds flag basing on features read from the header */
 	set->ignore_sds = !(features.incompat & POOL_FEAT_SDS);
-
-	/* check for bad blocks when in dry run or clear them otherwise */
-	if (replica_badblocks_check_or_clear(set, set_hs, is_dry_run(flags),
-			called_from_sync,
-			features.compat & POOL_FEAT_CHECK_BAD_BLOCKS,
-			called_from_sync && fix_bad_blocks(flags))) {
-		LOG(1, "replica bad_blocks check failed");
-		goto err;
-	}
 
 	/* map all headers */
 	map_all_unbroken_headers(set, set_hs);

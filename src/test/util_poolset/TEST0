@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright 2015-2018, Intel Corporation
+# Copyright 2015-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -35,7 +35,6 @@
 # src/test/util_poolset/TEST0 -- unit test for util_pool_create()
 #
 
-# standard unit test setup
 . ../unittest/unittest.sh
 
 require_test_type medium
@@ -150,7 +149,6 @@ check_no_files $DIR/testfile41 $DIR/testfile42\
 	$DIR/testfile201\
 	$DIR/testfile231\
 	$DIR/testfile252
-
 
 $GREP "<1>" $TEST_LOG_FILE | sed -e "s/^.*\][ ]*//g" > ./grep$UNITTEST_NUM.log
 

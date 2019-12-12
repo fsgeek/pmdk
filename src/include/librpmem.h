@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -36,18 +36,18 @@
  * This library provides low-level support for remote access to persistent
  * memory utilizing RDMA-capable RNICs.
  *
- * See librpmem(3) for details.
+ * See librpmem(7) for details.
  */
 
 #ifndef LIBRPMEM_H
 #define LIBRPMEM_H 1
 
+#include <sys/types.h>
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <sys/types.h>
-#include <stdint.h>
 
 typedef struct rpmem_pool RPMEMpool;
 
@@ -81,6 +81,11 @@ int rpmem_set_attr(RPMEMpool *rpp, const struct rpmem_pool_attr *attr);
 int rpmem_close(RPMEMpool *rpp);
 
 #define RPMEM_PERSIST_RELAXED	(1U << 0)
+#define RPMEM_FLUSH_RELAXED	(1U << 0)
+
+int rpmem_flush(RPMEMpool *rpp, size_t offset, size_t length, unsigned lane,
+		unsigned flags);
+int rpmem_drain(RPMEMpool *rpp, unsigned lane, unsigned flags);
 
 int rpmem_persist(RPMEMpool *rpp, size_t offset, size_t length,
 		unsigned lane, unsigned flags);
@@ -101,7 +106,7 @@ int rpmem_remove(const char *target, const char *pool_set, int flags);
  * at compile-time by passing these defines to rpmem_check_version().
  */
 #define RPMEM_MAJOR_VERSION 1
-#define RPMEM_MINOR_VERSION 2
+#define RPMEM_MINOR_VERSION 3
 const char *rpmem_check_version(unsigned major_required,
 		unsigned minor_required);
 

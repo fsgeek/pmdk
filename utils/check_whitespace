@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# Copyright 2015-2018, Intel Corporation
+# Copyright 2015-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -101,9 +101,20 @@ sub check_whitespace {
 	my $eol;
 	my $nf = 0;
 	my $fstr = decode_file_as_string($full, $file);
+	my $empty = 0;
+	my $is_python = $full =~ /\.py$/;
 
 	for (split /^/, $fstr) {
 		$line++;
+		if (!$is_python && /^$/) {
+			$empty++;
+			if ($empty > 1) {
+				err("$full:$line: ERROR duplicated empty line");
+			}
+		} else {
+			$empty = 0;
+		}
+
 		$eol = /[\n]/s;
 		if (/^\.nf$/) {
 			err("$full:$line: ERROR: nested .nf") if $nf;
@@ -126,7 +137,6 @@ sub check_whitespace_with_exc {
 
 	$_ = $full;
 
-	return 0 if /^[.\/]*src\/jemalloc.*/;
 	return 0 if /^[.\/]*src\/common\/queue\.h/;
 	return 0 if /^[.\/]*src\/common\/valgrind\/.*\.h/;
 
@@ -197,7 +207,6 @@ foreach my $arg (@ARGV) {
 
 			if (!$force &&
 			   ($full eq './.git' ||
-			    $full eq './src/jemalloc' ||
 			    $full eq './src/debug' ||
 			    $full eq './src/nondebug' ||
 			    $full eq './rpmbuild' ||

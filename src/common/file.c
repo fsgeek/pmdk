@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -48,80 +48,14 @@
 #include <sys/sysmacros.h>
 #endif
 
+#include "../libpmem2/config.h"
+#include "../libpmem2/pmem2_utils.h"
 #include "file.h"
 #include "os.h"
 #include "out.h"
 #include "mmap.h"
 
-#define DEVICE_DAX_PREFIX "/sys/class/dax"
-#define MAX_SIZE_LENGTH 64
-
 #define DEVICE_DAX_ZERO_LEN (2 * MEGABYTE)
-
-#ifndef _WIN32
-/*
- * device_dax_size -- (internal) checks the size of a given dax device
- */
-static ssize_t
-device_dax_size(const char *path)
-{
-	LOG(3, "path \"%s\"", path);
-
-	os_stat_t st;
-	int olderrno;
-
-	if (os_stat(path, &st) < 0) {
-		ERR("!stat \"%s\"", path);
-		return -1;
-	}
-
-	char spath[PATH_MAX];
-	snprintf(spath, PATH_MAX, "/sys/dev/char/%u:%u/size",
-		os_major(st.st_rdev), os_minor(st.st_rdev));
-
-	LOG(4, "device size path \"%s\"", spath);
-
-	int fd = os_open(spath, O_RDONLY);
-	if (fd < 0) {
-		ERR("!open \"%s\"", spath);
-		return -1;
-	}
-
-	ssize_t size = -1;
-
-	char sizebuf[MAX_SIZE_LENGTH + 1];
-	ssize_t nread;
-	if ((nread = read(fd, sizebuf, MAX_SIZE_LENGTH)) < 0) {
-		ERR("!read");
-		goto out;
-	}
-
-	sizebuf[nread] = 0; /* null termination */
-
-	char *endptr;
-
-	olderrno = errno;
-	errno = 0;
-
-	size = strtoll(sizebuf, &endptr, 0);
-	if (endptr == sizebuf || *endptr != '\n' ||
-	    ((size == LLONG_MAX || size == LLONG_MIN) && errno == ERANGE)) {
-		ERR("invalid device size %s", sizebuf);
-		size = -1;
-		goto out;
-	}
-
-	errno = olderrno;
-
-out:
-	olderrno = errno;
-	(void) os_close(fd);
-	errno = olderrno;
-
-	LOG(4, "device size %zu", size);
-	return size;
-}
-#endif
 
 /*
  * util_file_exists -- checks whether file exists
@@ -153,41 +87,28 @@ util_file_exists(const char *path)
 }
 
 /*
- * get_file_type_internal -- (internal) checks whether stat structure describes
+ * util_stat_get_type -- checks whether stat structure describes
  *			 device dax or a normal file
  */
-static enum file_type
-get_file_type_internal(os_stat_t *st)
+enum file_type
+util_stat_get_type(const os_stat_t *st)
 {
-#ifdef _WIN32
-	return TYPE_NORMAL;
-#else
-	if (!S_ISCHR(st->st_mode)) {
-		LOG(4, "not a character device");
+	enum pmem2_file_type type;
+
+	int ret = pmem2_get_type_from_stat(st, &type);
+	if (ret) {
+		errno = pmem2_err_to_errno(ret);
+		return OTHER_ERROR;
+	}
+
+	if (type == PMEM2_FTYPE_REG || type == PMEM2_FTYPE_DIR)
 		return TYPE_NORMAL;
-	}
 
-	char spath[PATH_MAX];
-	snprintf(spath, PATH_MAX, "/sys/dev/char/%u:%u/subsystem",
-		os_major(st->st_rdev), os_minor(st->st_rdev));
+	if (type == PMEM2_FTYPE_DEVDAX)
+		return TYPE_DEVDAX;
 
-	LOG(4, "device subsystem path \"%s\"", spath);
-
-	char npath[PATH_MAX];
-	char *rpath = realpath(spath, npath);
-	if (rpath == NULL) {
-		ERR("!realpath \"%s\"", spath);
-		return OTHER_ERROR;
-	}
-
-	if (strcmp(DEVICE_DAX_PREFIX, rpath) != 0) {
-		LOG(3, "%s path does not match device dax prefix path", rpath);
-		errno = EINVAL;
-		return OTHER_ERROR;
-	}
-
-	return TYPE_DEVDAX;
-#endif
+	ASSERTinfo(0, "unhandled file type in util_stat_get_type");
+	return OTHER_ERROR;
 }
 
 /*
@@ -209,7 +130,7 @@ util_fd_get_type(int fd)
 		return OTHER_ERROR;
 	}
 
-	return get_file_type_internal(&st);
+	return util_stat_get_type(&st);
 #endif
 }
 
@@ -245,7 +166,7 @@ util_file_get_type(const char *path)
 		return OTHER_ERROR;
 	}
 
-	return get_file_type_internal(&st);
+	return util_stat_get_type(&st);
 #endif
 }
 
@@ -257,24 +178,54 @@ util_file_get_size(const char *path)
 {
 	LOG(3, "path \"%s\"", path);
 
-	int file_type = util_file_get_type(path);
-	if (file_type < 0)
-		return -1;
-
-#ifndef _WIN32
-	if (file_type == TYPE_DEVDAX) {
-		return device_dax_size(path);
-	}
-#endif
-
-	os_stat_t stbuf;
-	if (os_stat(path, &stbuf) < 0) {
-		ERR("!stat \"%s\"", path);
+	int fd = os_open(path, O_RDONLY);
+	if (fd < 0) {
+		ERR("!open");
 		return -1;
 	}
 
-	LOG(4, "file length %zu", stbuf.st_size);
-	return stbuf.st_size;
+	ssize_t size = util_fd_get_size(fd);
+	(void) close(fd);
+
+	return size;
+}
+
+/*
+ * util_fd_get_size -- returns size of a file behind a given file descriptor
+ */
+ssize_t
+util_fd_get_size(int fd)
+{
+	LOG(3, "fd %d", fd);
+
+	struct pmem2_config cfg;
+	size_t size;
+	int ret;
+
+	pmem2_config_init(&cfg);
+	ret = pmem2_config_set_fd(&cfg, fd);
+	if (ret) {
+		errno = pmem2_err_to_errno(ret);
+		return -1;
+	}
+
+	ret = pmem2_config_get_file_size(&cfg, &size);
+	if (ret) {
+		errno = pmem2_err_to_errno(ret);
+		return -1;
+	}
+
+	/* size is unsigned, this function returns signed */
+	if (size >= INT64_MAX) {
+		errno = ERANGE;
+		ERR(
+			"file size (%ld) too big to be represented in 64-bit signed integer",
+			size);
+		return -1;
+	}
+
+	LOG(4, "file length %zu", size);
+	return (ssize_t)size;
 }
 
 /*
@@ -288,19 +239,23 @@ util_file_map_whole(const char *path)
 	int fd;
 	int olderrno;
 	void *addr = NULL;
+	int flags = O_RDWR;
+#ifdef _WIN32
+	flags |= O_BINARY;
+#endif
 
-	if ((fd = os_open(path, O_RDWR)) < 0) {
+	if ((fd = os_open(path, flags)) < 0) {
 		ERR("!open \"%s\"", path);
 		return NULL;
 	}
 
-	ssize_t size = util_file_get_size(path);
+	ssize_t size = util_fd_get_size(fd);
 	if (size < 0) {
 		LOG(2, "cannot determine file length \"%s\"", path);
 		goto out;
 	}
 
-	addr = util_map(fd, (size_t)size, MAP_SHARED, 0, 0, NULL);
+	addr = util_map(fd, 0, (size_t)size, MAP_SHARED, 0, 0, NULL);
 	if (addr == NULL) {
 		LOG(2, "failed to map entire file \"%s\"", path);
 		goto out;
@@ -325,13 +280,17 @@ util_file_zero(const char *path, os_off_t off, size_t len)
 	int fd;
 	int olderrno;
 	int ret = 0;
+	int flags = O_RDWR;
+#ifdef _WIN32
+	flags |= O_BINARY;
+#endif
 
-	if ((fd = os_open(path, O_RDWR)) < 0) {
+	if ((fd = os_open(path, flags)) < 0) {
 		ERR("!open \"%s\"", path);
 		return -1;
 	}
 
-	ssize_t size = util_file_get_size(path);
+	ssize_t size = util_fd_get_size(fd);
 	if (size < 0) {
 		LOG(2, "cannot determine file length \"%s\"", path);
 		ret = -1;
@@ -351,7 +310,7 @@ util_file_zero(const char *path, os_off_t off, size_t len)
 		len = (size_t)(size - off);
 	}
 
-	void *addr = util_map(fd, (size_t)size, MAP_SHARED, 0, 0, NULL);
+	void *addr = util_map(fd, 0, (size_t)size, MAP_SHARED, 0, 0, NULL);
 	if (addr == NULL) {
 		LOG(2, "failed to map entire file \"%s\"", path);
 		ret = -1;
@@ -572,7 +531,7 @@ util_file_open(const char *path, size_t *size, size_t minsize, int flags)
 		if (size)
 			ASSERTeq(*size, 0);
 
-		ssize_t actual_size = util_file_get_size(path);
+		ssize_t actual_size = util_fd_get_size(fd);
 		if (actual_size < 0) {
 			ERR("stat \"%s\": negative size", path);
 			errno = EINVAL;

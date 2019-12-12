@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -50,8 +50,8 @@
 #include "os.h"
 #include "file.h"
 #include "out.h"
+#include "../libpmem2/pmem2_utils.h"
 
-#define MAX_SIZE_LENGTH 64
 #define DAX_REGION_ID_LEN 6 /* 5 digits + \0 */
 
 /*
@@ -114,7 +114,7 @@ util_tmpfile(const char *dir, const char *templ, int flags)
 	ASSERT(flags == 0 || flags == O_EXCL);
 
 #ifdef O_TMPFILE
-	int fd = open(dir, O_TMPFILE | O_RDWR | flags, S_IRUSR | S_IWUSR);
+	int fd = os_open(dir, O_TMPFILE | O_RDWR | flags, S_IRUSR | S_IWUSR);
 	/*
 	 * Open can fail if underlying file system does not support O_TMPFILE
 	 * flag.
@@ -209,76 +209,20 @@ util_file_dir_remove(const char *path)
 static size_t
 device_dax_alignment(const char *path)
 {
-	LOG(3, "path \"%s\"", path);
-
+	size_t size = 0;
 	os_stat_t st;
-	int olderrno;
+
+	LOG(3, "path \"%s\"", path);
 
 	if (os_stat(path, &st) < 0) {
 		ERR("!stat \"%s\"", path);
 		return 0;
 	}
 
-	char spath[PATH_MAX];
-	snprintf(spath, PATH_MAX, "/sys/dev/char/%u:%u/device/align",
-		os_major(st.st_rdev), os_minor(st.st_rdev));
-
-	LOG(4, "device align path \"%s\"", spath);
-
-	int fd = os_open(spath, O_RDONLY);
-	if (fd < 0) {
-		ERR("!open \"%s\"", spath);
+	int ret = pmem2_device_dax_alignment_from_stat(&st, &size);
+	if (ret)
 		return 0;
-	}
 
-	size_t size = 0;
-
-	char sizebuf[MAX_SIZE_LENGTH + 1];
-	ssize_t nread;
-	if ((nread = read(fd, sizebuf, MAX_SIZE_LENGTH)) < 0) {
-		ERR("!read");
-		goto out;
-	}
-
-	sizebuf[nread] = 0; /* null termination */
-
-	char *endptr;
-
-	olderrno = errno;
-	errno = 0;
-
-	/* 'align' is in decimal format */
-	size = strtoull(sizebuf, &endptr, 10);
-	if (endptr == sizebuf || *endptr != '\n' ||
-	    (size == ULLONG_MAX && errno == ERANGE)) {
-		ERR("invalid device alignment %s", sizebuf);
-		size = 0;
-		goto out;
-	}
-
-	/*
-	 * If the alignment value is not a power of two, try with
-	 * hex format, as this is how it was printed in older kernels.
-	 * Just in case someone is using kernel <4.9.
-	 */
-	if ((size & (size - 1)) != 0) {
-		size = strtoull(sizebuf, &endptr, 16);
-		if (endptr == sizebuf || *endptr != '\n' ||
-		    (size == ULLONG_MAX && errno == ERANGE)) {
-			ERR("invalid device alignment %s", sizebuf);
-			size = 0;
-			goto out;
-		}
-	}
-
-	errno = olderrno;
-
-out:
-	olderrno = errno;
-	(void) os_close(fd);
-	errno = olderrno;
-
-	LOG(4, "device alignment %zu", size);
 	return size;
 }
 

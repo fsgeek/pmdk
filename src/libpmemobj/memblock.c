@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -324,7 +324,7 @@ memblock_header_none_reinit(const struct memory_block *m)
 	/* NOP */
 }
 
-static struct {
+static const struct {
 	/* determines the sizes of an object */
 	size_t (*get_size)(const struct memory_block *m);
 
@@ -449,7 +449,8 @@ memblock_run_bitmap(uint32_t *size_idx, uint16_t flags,
 		 * Then, align the number of values up, so that the cacheline
 		 * alignment is preserved.
 		 */
-		b->nvalues = ALIGN_UP(b->nvalues + RUN_BASE_METADATA_VALUES, 8U)
+		b->nvalues = ALIGN_UP(b->nvalues + RUN_BASE_METADATA_VALUES,
+			(unsigned)(CACHELINE_SIZE / sizeof(*b->values)))
 			- RUN_BASE_METADATA_VALUES;
 
 		/*
@@ -1070,7 +1071,7 @@ huge_iterate_used(const struct memory_block *m, object_callback cb, void *arg)
 }
 
 /*
- * huge_vg_init -- initalizes chunk metadata in memcheck state
+ * huge_vg_init -- initializes chunk metadata in memcheck state
  */
 static void
 huge_vg_init(const struct memory_block *m, int objects,
@@ -1099,7 +1100,7 @@ huge_vg_init(const struct memory_block *m, int objects,
 }
 
 /*
- * run_vg_init -- initalizes run metadata in memcheck state
+ * run_vg_init -- initializes run metadata in memcheck state
  */
 static void
 run_vg_init(const struct memory_block *m, int objects,

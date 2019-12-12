@@ -1,5 +1,5 @@
 #
-# Copyright 2017-2018, Intel Corporation
+# Copyright 2017-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -34,7 +34,6 @@
 # src/test/util_poolset/TEST5w -- unit test for util_pool_open()
 #
 
-# standard unit test setup
 . ..\unittest\unittest.ps1
 
 require_test_type medium
@@ -49,6 +48,9 @@ $MIN_POOL = 128 * 1024 * 1024 # 128MiB
 $MIN_POOL_STR = ${MIN_POOL}.toString() + "B" # 128MiB
 $RESVSIZE=(128 + 4) * 1024 * 1024 # initial part + extension
 $RESVSIZE_STR = ${RESVSIZE}.toString() + "B" # initial part + extension
+
+$REQUIRE_POOL = ${MIN_POOL} * 15
+require_free_space "${REQUIRE_POOL}b"
 
 create_poolset $DIR\testset1 `
 	${RESVSIZE_STR}:$DIR\testdir11:d `

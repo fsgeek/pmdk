@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  * Copyright (c) 2016, Microsoft Corporation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -134,7 +134,7 @@ is_pmem_detect(const void *addr, size_t len)
 	AcquireSRWLockShared(&FileMappingQLock);
 
 	PFILE_MAPPING_TRACKER mt;
-	SORTEDQ_FOREACH(mt, &FileMappingQHead, ListEntry) {
+	PMDK_SORTEDQ_FOREACH(mt, &FileMappingQHead, ListEntry) {
 		if (mt->BaseAddress >= end) {
 			LOG(4, "ignoring all mapped ranges beyond given range");
 			break;
@@ -194,16 +194,18 @@ pmem_map_register(int fd, size_t len, const char *path, int is_dev_dax)
 	/* there is no device dax on windows */
 	ASSERTeq(is_dev_dax, 0);
 
-	return util_map(fd, len, MAP_SHARED, 0, 0, NULL);
+	return util_map(fd, 0, len, MAP_SHARED, 0, 0, NULL);
 }
 
 /*
  * pmem_os_init -- os-dependent part of pmem initialization
  */
 void
-pmem_os_init(void)
+pmem_os_init(is_pmem_func *func)
 {
 	LOG(3, NULL);
+
+	*func = is_pmem_detect;
 #if NTDDI_VERSION >= NTDDI_WIN10_RS1
 	Func_qvmi = (PQVM)GetProcAddress(
 			GetModuleHandle(TEXT("KernelBase.dll")),

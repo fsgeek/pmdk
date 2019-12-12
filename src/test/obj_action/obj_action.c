@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018, Intel Corporation
+ * Copyright 2017-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -190,6 +190,55 @@ test_many(PMEMobjpool *pop, size_t n)
 	FREE(act);
 }
 
+static void
+test_duplicate(PMEMobjpool *pop)
+{
+	struct pobj_alloc_class_desc alloc_class_128;
+	alloc_class_128.header_type = POBJ_HEADER_COMPACT;
+	alloc_class_128.unit_size = 1024 * 100;
+	alloc_class_128.units_per_block = 1;
+	alloc_class_128.alignment = 0;
+
+	int ret = pmemobj_ctl_set(pop, "heap.alloc_class.128.desc",
+		&alloc_class_128);
+	UT_ASSERTeq(ret, 0);
+
+	struct pobj_action a[10];
+	PMEMoid oid[10];
+
+	oid[0] = pmemobj_xreserve(pop, &a[0], 1, 0, POBJ_CLASS_ID(128));
+	UT_ASSERT(!OID_IS_NULL(oid[0]));
+
+	pmemobj_cancel(pop, a, 1);
+
+	oid[0] = pmemobj_xreserve(pop, &a[0], 1, 0, POBJ_CLASS_ID(128));
+	UT_ASSERT(!OID_IS_NULL(oid[0]));
+
+	oid[0] = pmemobj_xreserve(pop, &a[1], 1, 0, POBJ_CLASS_ID(128));
+	UT_ASSERT(!OID_IS_NULL(oid[0]));
+
+	oid[0] = pmemobj_xreserve(pop, &a[2], 1, 0, POBJ_CLASS_ID(128));
+	UT_ASSERT(!OID_IS_NULL(oid[0]));
+
+	pmemobj_cancel(pop, a, 3);
+
+	oid[0] = pmemobj_xreserve(pop, &a[0], 1, 0, POBJ_CLASS_ID(128));
+	UT_ASSERT(!OID_IS_NULL(oid[0]));
+
+	oid[0] = pmemobj_xreserve(pop, &a[1], 1, 0, POBJ_CLASS_ID(128));
+	UT_ASSERT(!OID_IS_NULL(oid[0]));
+
+	oid[0] = pmemobj_xreserve(pop, &a[2], 1, 0, POBJ_CLASS_ID(128));
+	UT_ASSERT(!OID_IS_NULL(oid[0]));
+
+	oid[0] = pmemobj_xreserve(pop, &a[3], 1, 0, POBJ_CLASS_ID(128));
+	UT_ASSERT(!OID_IS_NULL(oid[0]));
+
+	oid[0] = pmemobj_xreserve(pop, &a[4], 1, 0, POBJ_CLASS_ID(128));
+	UT_ASSERT(!OID_IS_NULL(oid[0]));
+
+	pmemobj_cancel(pop, a, 5);
+}
 
 static void
 test_many_sets(PMEMobjpool *pop, size_t n)
@@ -213,7 +262,6 @@ test_many_sets(PMEMobjpool *pop, size_t n)
 	pmemobj_free(&oid);
 	FREE(act);
 }
-
 
 int
 main(int argc, char *argv[])
@@ -243,13 +291,18 @@ main(int argc, char *argv[])
 		pmemobj_reserve(pop, &reserved[0], sizeof(struct foo), 0);
 	pmemobj_set_value(pop, &reserved[1], &rootp->reserved.value, 1);
 
-	rootp->published.oid =
-		pmemobj_reserve(pop, &published[0], sizeof(struct foo), 0);
-	pmemobj_set_value(pop, &published[1], &rootp->published.value, 1);
-	pmemobj_publish(pop, published, 2);
-
 	rootp->tx_reserved.oid =
 		pmemobj_reserve(pop, &tx_reserved, sizeof(struct foo), 0);
+
+	rootp->tx_reserved_fulfilled.oid =
+		pmemobj_reserve(pop,
+			&tx_reserved_fulfilled, sizeof(struct foo), 0);
+
+	rootp->tx_published.oid =
+		pmemobj_reserve(pop, &tx_published, sizeof(struct foo), 0);
+
+	rootp->published.oid =
+		pmemobj_reserve(pop, &published[0], sizeof(struct foo), 0);
 
 	TX_BEGIN(pop) {
 		pmemobj_tx_publish(&tx_reserved, 1);
@@ -257,10 +310,6 @@ main(int argc, char *argv[])
 	} TX_ONCOMMIT {
 		UT_ASSERT(0);
 	} TX_END
-
-	rootp->tx_reserved_fulfilled.oid =
-		pmemobj_reserve(pop,
-			&tx_reserved_fulfilled, sizeof(struct foo), 0);
 
 	TX_BEGIN(pop) {
 		pmemobj_tx_publish(&tx_reserved_fulfilled, 1);
@@ -270,8 +319,8 @@ main(int argc, char *argv[])
 		UT_ASSERT(0);
 	} TX_END
 
-	rootp->tx_published.oid =
-		pmemobj_reserve(pop, &tx_published, sizeof(struct foo), 0);
+	pmemobj_set_value(pop, &published[1], &rootp->published.value, 1);
+	pmemobj_publish(pop, published, 2);
 
 	TX_BEGIN(pop) {
 		pmemobj_tx_publish(&tx_published, 1);
@@ -322,6 +371,8 @@ main(int argc, char *argv[])
 
 	test_many(pop, POBJ_MAX_ACTIONS * 2);
 	test_many_sets(pop, POBJ_MAX_ACTIONS * 2);
+
+	test_duplicate(pop);
 
 	pmemobj_close(pop);
 

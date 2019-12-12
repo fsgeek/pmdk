@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018, Intel Corporation
+ * Copyright 2016-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -242,7 +242,6 @@ rpmem_ssh_execv(const struct rpmem_target_info *info, const char **argv)
 	if (ret)
 		goto err_run;
 
-
 	free(user_at_node);
 	free(cmd);
 
@@ -332,10 +331,13 @@ err_status:
 int
 rpmem_ssh_close(struct rpmem_ssh *rps)
 {
-	int ret;
+	int ret, rv;
 
 	rpmem_cmd_term(rps->cmd);
-	rpmem_cmd_wait(rps->cmd, &ret);
+	rv = rpmem_cmd_wait(rps->cmd, &ret);
+	if (rv)
+		return rv;
+
 	rpmem_cmd_fini(rps->cmd);
 	free(rps);
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright 2016-2018, Intel Corporation
+# Copyright 2016-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -103,6 +103,28 @@ else
 	echo "Skipping remote tests"
 	echo
 	echo "Removing all libfabric.pc files in order to simulate that libfabric is not installed:"
-	find /usr -name "libfabric.pc" 2>/dev/null
+	find /usr -name "libfabric.pc" 2>/dev/null || true
 	echo $USERPASS | sudo -S sh -c 'find /usr -name "libfabric.pc" -exec rm -f {} + 2>/dev/null'
 fi
+
+# Configure python tests
+	cat << EOF >> $WORKDIR/src/test/testconfig.py
+config = {
+	'unittest_log_level': 1,
+	'cacheline_fs_dir': '/tmp',
+	'force_cacheline': True,
+	'page_fs_dir': '/tmp',
+	'force_page': False,
+	'byte_fs_dir': '/tmp',
+	'force_byte': True,
+	'tm': True,
+	'test_type': 'check',
+	'granularity': 'all',
+	'fs_dir_force_pmem': 0,
+	'keep_going': False,
+	'timeout': '3m',
+	'build': ['debug', 'release'],
+	'force_enable': None,
+   }
+EOF
+

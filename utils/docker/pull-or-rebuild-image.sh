@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright 2016-2018, Intel Corporation
+# Copyright 2016-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -49,6 +49,8 @@
 
 set -e
 
+source $(dirname $0)/set-vars.sh
+
 if [[ "$TRAVIS_EVENT_TYPE" != "cron" && "$TRAVIS_BRANCH" != "coverity_scan" \
 	&& "$COVERITY" -eq 1 ]]; then
 	echo "INFO: Skip Coverity scan job if build is triggered neither by " \
@@ -75,17 +77,32 @@ if [[ -z "$HOST_WORKDIR" ]]; then
 	exit 1
 fi
 
-# TRAVIS_COMMIT_RANGE is usually invalid for force pushes - ignore such values
-# when used with non-upstream repository
-if [ -n "$TRAVIS_COMMIT_RANGE" -a $TRAVIS_REPO_SLUG != "pmem/pmdk" ]; then
+# TRAVIS_COMMIT_RANGE is usually invalid for force pushes - fix it when used
+# with non-upstream repository
+if [ -n "$TRAVIS_COMMIT_RANGE" -a "$TRAVIS_REPO_SLUG" != "$GITHUB_REPO" ]; then
 	if ! git rev-list $TRAVIS_COMMIT_RANGE; then
-		TRAVIS_COMMIT_RANGE=
+		# get commit id of the last merge
+		LAST_MERGE=$(git log --merges --pretty=%H -1)
+		if [ "$LAST_MERGE" == "" ]; then
+			# possible in case of shallow clones
+			TRAVIS_COMMIT_RANGE=""
+		else
+			TRAVIS_COMMIT_RANGE="$LAST_MERGE..HEAD"
+			# make sure it works now
+			if ! git rev-list $TRAVIS_COMMIT_RANGE; then
+				TRAVIS_COMMIT_RANGE=""
+			fi
+		fi
 	fi
 fi
 
 # Find all the commits for the current build
 if [[ -n "$TRAVIS_COMMIT_RANGE" ]]; then
-	commits=$(git rev-list $TRAVIS_COMMIT_RANGE)
+	# $TRAVIS_COMMIT_RANGE contains "..." instead of ".."
+	# https://github.com/travis-ci/travis-ci/issues/4596
+	PR_COMMIT_RANGE="${TRAVIS_COMMIT_RANGE/.../..}"
+
+	commits=$(git rev-list $PR_COMMIT_RANGE)
 else
 	commits=$TRAVIS_COMMIT
 fi
@@ -115,17 +132,17 @@ for file in $files; do
 		popd
 
 		# Check if the image has to be pushed to Docker Hub
-		# (i.e. the build is triggered by commits to the pmem/pmdk
-		# repository's master branch, and the Travis build is not
+		# (i.e. the build is triggered by commits to the $GITHUB_REPO
+		# repository's stable-* or master branch, and the Travis build is not
 		# of the "pull_request" type). In that case, create the empty
 		# file.
-		if [[ $TRAVIS_REPO_SLUG == "pmem/pmdk" \
-			&& $TRAVIS_BRANCH == "master" \
-			&& $TRAVIS_EVENT_TYPE != "pull_request"
+		if [[ "$TRAVIS_REPO_SLUG" == "$GITHUB_REPO" \
+			&& ($TRAVIS_BRANCH == stable-* || $TRAVIS_BRANCH == devel-* || $TRAVIS_BRANCH == master) \
+			&& $TRAVIS_EVENT_TYPE != "pull_request" \
 			&& $PUSH_IMAGE == "1" ]]
 		then
 			echo "The image will be pushed to Docker Hub"
-			touch push_image_to_repo_flag
+			touch $CI_FILE_PUSH_IMAGE_TO_REPO
 		else
 			echo "Skip pushing the image to Docker Hub"
 		fi
@@ -133,7 +150,7 @@ for file in $files; do
 		if [[ $PUSH_IMAGE == "1" ]]
 		then
 			echo "Skip build package check if image has to be pushed"
-			touch skip_build_package_check
+			touch $CI_FILE_SKIP_BUILD_PKG_CHECK
 		fi
 		exit 0
 	fi
@@ -141,4 +158,4 @@ done
 
 # Getting here means rebuilding the Docker image is not required.
 # Pull the image from Docker Hub.
-docker pull pmem/pmdk:${OS}-${OS_VER}
+docker pull ${DOCKERHUB_REPO}:1.9-${OS}-${OS_VER}

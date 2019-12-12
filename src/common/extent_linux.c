@@ -1,5 +1,5 @@
 /*
- * Copyright 2018, Intel Corporation
+ * Copyright 2018-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -43,6 +43,7 @@
 #include "file.h"
 #include "out.h"
 #include "extent.h"
+#include "alloc.h"
 
 /*
  * os_extents_common -- (internal) common part of getting extents
@@ -57,7 +58,7 @@ os_extents_common(const char *path, struct extents *exts,
 {
 	LOG(3, "path %s exts %p pfd %p pfmap %p", path, exts, pfd, pfmap);
 
-	int fd = open(path, O_RDONLY);
+	int fd = os_open(path, O_RDONLY);
 	if (fd == -1) {
 		ERR("!open %s", path);
 		return -1;

@@ -1,4 +1,5 @@
-# Copyright 2018, Intel Corporation
+#
+# Copyright 2018-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -106,9 +107,9 @@ class OperationFactory:
             """
             top = stack[-1][0]
             if top.endswith(OperationFactory.__suffix[0]):
-                    top = top[:-len(OperationFactory.__suffix[0])]
+                top = top[:-len(OperationFactory.__suffix[0])]
             if marker.endswith(OperationFactory.__suffix[-1]):
-                    marker = marker[:-len(OperationFactory.__suffix[-1])]
+                marker = marker[:-len(OperationFactory.__suffix[-1])]
 
             if top != marker:
                 raise NotSupportedOperationException(
@@ -142,7 +143,7 @@ class OperationFactory:
             if id_.endswith(OperationFactory.__suffix[0]):
                 # BEGIN defined by user
                 marker_name = id_.partition('.')[0]
-                if marker_name in markers:
+                if markers is not None and marker_name in markers:
                     engine = markers[marker_name]
                     try:
                         mem_ops = getattr(memoryoperations, engine)

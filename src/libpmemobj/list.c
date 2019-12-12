@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2018, Intel Corporation
+ * Copyright 2015-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -202,7 +202,6 @@ list_set_oid_redo_log(PMEMobjpool *pop,
 		ULOG_OPERATION_SET);
 	return 0;
 }
-
 
 /*
  * list_update_head -- (internal) update pe_first entry in list head
@@ -497,7 +496,7 @@ list_insert_new(PMEMobjpool *pop,
 
 	struct pobj_action reserved;
 	if (palloc_reserve(&pop->heap, size, constructor, arg,
-		type_num, 0, 0, &reserved) != 0) {
+		type_num, 0, 0, 0, &reserved) != 0) {
 		ERR("!palloc_reserve");
 		ret = -1;
 		goto err_pmalloc;
@@ -670,7 +669,8 @@ list_insert(PMEMobjpool *pop,
 	list_fill_entry_redo_log(pop, ctx,
 			&args_common, next_offset, prev_offset, 1);
 
-	operation_finish(ctx);
+	operation_process(ctx);
+	operation_finish(ctx, 0);
 
 	pmemobj_mutex_unlock_nofail(pop, &head->lock);
 err:
@@ -821,7 +821,8 @@ list_remove(PMEMobjpool *pop,
 	list_fill_entry_redo_log(pop, ctx,
 			&args_common, 0, 0, 0);
 
-	operation_finish(ctx);
+	operation_process(ctx);
+	operation_finish(ctx, 0);
 
 	pmemobj_mutex_unlock_nofail(pop, &head->lock);
 err:
@@ -956,7 +957,8 @@ list_move(PMEMobjpool *pop,
 
 redo_last:
 unlock:
-	operation_finish(ctx);
+	operation_process(ctx);
+	operation_finish(ctx, 0);
 	list_mutexes_unlock(pop, head_new, head_old);
 err:
 	lane_release(pop);

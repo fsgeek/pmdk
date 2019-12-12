@@ -7,7 +7,7 @@ header: PMDK
 date: pmemobj API version 2.3
 ...
 
-[comment]: <> (Copyright 2017, Intel Corporation)
+[comment]: <> (Copyright 2017-2018, Intel Corporation)
 
 [comment]: <> (Redistribution and use in source and binary forms, with or without)
 [comment]: <> (modification, are permitted provided that the following conditions)
@@ -42,7 +42,6 @@ date: pmemobj API version 2.3
 [RETURN VALUE](#return-value)<br />
 [SEE ALSO](#see-also)<br />
 
-
 # NAME #
 
 **pmemobj_alloc**(), **pmemobj_xalloc**(), **pmemobj_zalloc**(),
@@ -51,7 +50,6 @@ date: pmemobj API version 2.3
 **POBJ_NEW**(), **POBJ_ALLOC**(), **POBJ_ZNEW**(), **POBJ_ZALLOC**(),
 **POBJ_REALLOC**(), **POBJ_ZREALLOC**(), **POBJ_FREE**()
 - non-transactional atomic allocations
-
 
 # SYNOPSIS #
 
@@ -87,7 +85,6 @@ POBJ_REALLOC(PMEMobjpool *pop, TOID *oidp, TYPE, size_t size)
 POBJ_ZREALLOC(PMEMobjpool *pop, TOID *oidp, TYPE, size_t size)
 POBJ_FREE(TOID *oidp)
 ```
-
 
 # DESCRIPTION #
 
@@ -132,10 +129,14 @@ associated with *type_num*.
 **pmemobj_xalloc**() is equivalent to **pmemobj_alloc**(), but with an
 additional *flags* argument that is a bitmask of the following values:
 
-+ **POBJ_XALLOC_ZERO** - zero the object (equivalent of **pmemobj_zalloc**())
++ **POBJ_XALLOC_ZERO** - zero the allocated object (equivalent of **pmemobj_zalloc**())
 
-+ **POBJ_CLASS_ID(class_id)** - allocate the object from allocation class
++ **POBJ_CLASS_ID(class_id)** - allocate an object from the allocation class
 *class_id*. The class id cannot be 0.
+
++ **POBJ_ARENA_ID(arena_id)** - allocate an object from the arena specified by
+*arena_id*. The arena must exist, otherwise, the behavior is undefined.
+If *arena_id* is equal 0, then arena assigned to the current thread will be used.
 
 The **pmemobj_zalloc**() function allocates a new zeroed object from
 the persistent memory heap associated with memory pool *pop*. The *PMEMoid*
@@ -231,7 +232,6 @@ typed *OID* of type name *TYPE*, and passes the type number from the typed
 The **POBJ_FREE**() macro is a wrapper around the **pmemobj_free**() function
 which takes a pointer to the typed *OID* instead of to *PMEMoid*.
 
-
 # RETURN VALUE #
 
 On success, **pmemobj_alloc**() and **pmemobj_xalloc** return 0. If *oidp*
@@ -261,7 +261,6 @@ appropriately.
 
 The **pmemobj_alloc_usable_size**() function returns the number of usable bytes
 in the object represented by *oid*. If *oid* is **OID_NULL**, it returns 0.
-
 
 # SEE ALSO #
 

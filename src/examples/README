@@ -38,6 +38,6 @@ librpmem(7) -- remote access to persistent memory
     Example programs are in the librpmem directory.
     More documentation: http://pmem.io/pmdk/librpmem
 
-libvmem(7) -- volatile memory allocation library
-    Example programs are in the libvmem directory.
-    More documentation: http://pmem.io/pmdk/libvmem
+libpmem2(7) -- low-level persistent memory support
+    Example programs are in the libpmem2 directory.
+    More documentation: http://pmem.io/pmdk/libpmem2

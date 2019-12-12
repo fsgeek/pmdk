@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright 2018, Intel Corporation
+# Copyright 2018-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -48,7 +48,7 @@ function pmemspoil_corrupt_replica_sds() {
 	expect_normal_exit $PMEMSPOIL --replica $replica $POOLSET \
 		pool_hdr.shutdown_state.usc=999 \
 		pool_hdr.shutdown_state.dirty=1 \
-		"pool_hdr.shutdown_state.checksum_gen\(\)"
+		"pool_hdr.shutdown_state.f:checksum_gen"
 }
 
 # pmempool_check_sds_init -- shutdown state unittest init
@@ -65,7 +65,8 @@ function pmempool_check_sds_init() {
 		local conf="sds.at_create=1"
 	fi
 
-	PMEMOBJ_CONF="$conf" expect_normal_exit $PMEMPOOL$EXESUFFIX create --layout=$LAYOUT obj $POOLSET
+	PMEMOBJ_CONF="${PMEMOBJ_CONF}$conf;"
+	expect_normal_exit $PMEMPOOL$EXESUFFIX create --layout=$LAYOUT obj $POOLSET
 }
 
 # pmempool_check_sds -- perform shutdown state unittest

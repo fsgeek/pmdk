@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018, Intel Corporation
+ * Copyright 2014-2019, Intel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -269,6 +269,11 @@ out_init(const char *log_prefix, const char *log_level_var,
 			"compiled with support for shutdown state";
 	LOG(1, "%s", shutdown_state_msg);
 #endif
+#if NDCTL_ENABLED
+	static __attribute__((used)) const char *ndctl_ge_63_msg =
+		"compiled with libndctl 63+";
+	LOG(1, "%s", ndctl_ge_63_msg);
+#endif
 
 	Last_errormsg_key_alloc();
 }
@@ -419,6 +424,10 @@ out_error(const char *file, int line, const char *func,
 		const char *suffix, const char *fmt, va_list ap)
 {
 	int oerrno = errno;
+	unsigned long olast_error = 0;
+#ifdef _WIN32
+	olast_error = GetLastError();
+#endif
 	unsigned cc = 0;
 	int ret;
 	const char *sep = "";
@@ -428,10 +437,18 @@ out_error(const char *file, int line, const char *func,
 
 	if (fmt) {
 		if (*fmt == '!') {
-			fmt++;
 			sep = ": ";
-			util_strerror(errno, errstr, UTIL_MAX_ERR_MSG);
+			fmt++;
+			if (*fmt == '!') {
+				fmt++;
+				/* it will abort on non Windows OS */
+				util_strwinerror(olast_error, errstr,
+					UTIL_MAX_ERR_MSG);
+			} else {
+				util_strerror(oerrno, errstr, UTIL_MAX_ERR_MSG);
+			}
 		}
+
 		ret = Vsnprintf(&errormsg[cc], MAXPRINT, fmt, ap);
 		if (ret < 0) {
 			strcpy(errormsg, "Vsnprintf failed");
@@ -474,6 +491,9 @@ out_error(const char *file, int line, const char *func,
 
 end:
 	errno = oerrno;
+#ifdef _WIN32
+	SetLastError(olast_error);
+#endif
 }
 
 /*

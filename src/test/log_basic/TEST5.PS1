@@ -1,5 +1,5 @@
 #
-# Copyright 2015-2018, Intel Corporation
+# Copyright 2015-2019, Intel Corporation
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -35,7 +35,6 @@
 # - pmemlog_open
 # - pmemlog_close
 
-# standard unit test setup
 . ..\unittest\unittest.ps1
 
 require_test_type medium
@@ -49,7 +48,7 @@ $Env:PMEMLOG_LOG_LEVEL = "10"
 
 create_poolset $DIR\testset1 2M:$DIR\testfile1:x
 
-expect_normal_exit $Env:EXE_DIR\log_basic$Env:EXESUFFIX $DIR\testset1 n
+expect_normal_exit $Env:EXE_DIR\log_basic$Env:EXESUFFIX $DIR\testset1 c n l h
 
 check_pool $DIR\testfile1
 
